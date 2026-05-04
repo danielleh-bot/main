@@ -1,0 +1,24 @@
+{
+  "mcpServers": {
+    "ada": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "mcp-remote",
+        "https://ada-server.taboolasyndication.com/mcp",
+        "--transport",
+        "http-only"
+      ]
+    },
+    "feature-catalog": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "mcp-remote",
+        "https://nexus-taboola-features-catalog.taboolasyndication.com/mcp/",
+        "--transport",
+        "http-only"
+      ]
+    }
+  }
+}
