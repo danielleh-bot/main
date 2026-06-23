@@ -53,6 +53,10 @@ node record.mjs ./creative.html \
 | `--wait`       | 6000       | Settle time (ms) after load before recording |
 | `--loop`       | 0          | GIF loop count, 0 = infinite |
 | `--colors`     | 256        | Max palette colors per frame (2–256); lower shrinks the file |
+| `--format`     | rgb565     | Palette precision: `rgb565` (best for photos), `rgb444`, `rgba4444` |
+| `--out-scale`  | 1          | Output pixel density vs CSS px; `>1` renders larger/crisper (pair with a higher `--ss`) |
+| `--dither`     | on         | Ordered dithering to reduce banding; pass `--dither off` for full-screen photo scrolls (avoids shimmer + smaller file) |
+| `--dither-strength` | 16    | Dither intensity when enabled |
 
 ## What it handles automatically
 
@@ -70,9 +74,12 @@ node record.mjs ./creative.html \
 
 ## Notes on file size
 
-A 5s phone-frame clip lands around 3–6 MB depending on fps and content. To shrink it:
-lower `--fps` (e.g. 12), shorten `--duration`, or reduce `--colors` (e.g. 128). One GIF of
-a few MB is fine in a deck; just avoid putting many very large GIFs on one slide.
+A 5s phone-frame clip with a mostly-static UI lands around 3–6 MB. **Full-screen
+photo/video feeds are the hard case**: every frame is a different image so GIF compression
+can't help, and a crisp 6s clip can run ~9 MB. To shrink: lower `--fps` (e.g. 10–12),
+shorten `--duration`, reduce `--out-scale`/`--colors`, and keep `--dither off`. For
+maximum crispness on photographic content, raise `--ss` and `--out-scale` together (e.g.
+`--ss 3 --out-scale 1.3`) and accept a larger file.
 
 ## Why GIF and not MP4?
 

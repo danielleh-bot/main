@@ -60,6 +60,10 @@ const O = {
   wait: parseInt(args.wait || '6000', 10),
   loop: parseInt(args.loop ?? '0', 10),
   colors: Math.max(2, Math.min(256, parseInt(args.colors || '256', 10))),
+  format: args.format || 'rgb565',           // palette precision: rgb565 (best) | rgb444 | rgba4444
+  dither: args.dither !== 'off',             // ordered dithering to kill photo banding (on by default)
+  ditherStrength: parseFloat(args['dither-strength'] || '16'),
+  outScale: parseFloat(args['out-scale'] || '1'), // output pixel density vs CSS px (>1 = larger/crisper)
 };
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -181,16 +185,18 @@ async function main() {
     ? (y) => page.evaluate((yy) => { const el = document.querySelector('[data-rec-scroll]'); if (el) el.scrollTop = yy; }, y)
     : (y) => page.evaluate((yy) => window.scrollTo(0, yy), y);
 
+  const dsFactor = Math.max(1, O.ss / O.outScale); // render at O.ss, output at O.outScale px density
   let outW = 0, outH = 0;
   for (let i = 0; i < totalFrames; i++) {
     await setScroll(positions[i]);
     await page.waitForTimeout(10);
     const buf = await page.screenshot({ type: 'png', clip: clip || undefined });
     const { data, width, height } = decodePNG(buf);
-    const ds = downscale(data, width, height, O.ss);
+    const ds = downscale(data, width, height, dsFactor);
     outW = ds.width; outH = ds.height;
-    const palette = quantize(ds.data, O.colors, { format: 'rgb444' });
-    const index = applyPalette(ds.data, palette, 'rgb444');
+    if (O.dither) orderedDither(ds.data, ds.width, ds.height, O.ditherStrength);
+    const palette = quantize(ds.data, O.colors, { format: O.format });
+    const index = applyPalette(ds.data, palette, O.format);
     gif.writeFrame(index, ds.width, ds.height, { palette, delay: frameDelayMs, repeat: O.loop });
     process.stdout.write(`\r  frame ${i + 1}/${totalFrames}`);
   }
@@ -201,6 +207,27 @@ async function main() {
   await browser.close();
   if (server) await new Promise(r => server.close(r));
   console.log(`Done: ${outPath} (${(gif.bytes().length / 1024).toFixed(0)} KB, ${outW}x${outH})`);
+}
+
+// Ordered (Bayer 8x8) dithering: jitter each channel by a sub-step amount before
+// palette quantization so nearest-color mapping alternates between neighbouring palette
+// entries, breaking up the banding/posterization GIFs show on photographic gradients.
+const BAYER8 = (() => {
+  const m = [[0, 32, 8, 40, 2, 34, 10, 42], [48, 16, 56, 24, 50, 18, 58, 26], [12, 44, 4, 36, 14, 46, 6, 38], [60, 28, 52, 20, 62, 30, 54, 22], [3, 35, 11, 43, 1, 33, 9, 41], [51, 19, 59, 27, 49, 17, 57, 25], [15, 47, 7, 39, 13, 45, 5, 37], [63, 31, 55, 23, 61, 29, 53, 21]];
+  const out = new Float32Array(64);
+  for (let y = 0; y < 8; y++) for (let x = 0; x < 8; x++) out[y * 8 + x] = m[y][x] / 64 - 0.5; // -0.5..0.5
+  return out;
+})();
+function orderedDither(data, w, h, strength) {
+  if (!strength) return;
+  for (let y = 0; y < h; y++) {
+    const brow = (y & 7) * 8;
+    for (let x = 0; x < w; x++) {
+      const t = BAYER8[brow + (x & 7)] * strength;
+      const i = (y * w + x) * 4;
+      data[i] += t; data[i + 1] += t; data[i + 2] += t; // Uint8ClampedArray clamps for us
+    }
+  }
 }
 
 // Box-average downscale of an RGBA buffer by factor f.
