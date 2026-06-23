@@ -54,6 +54,8 @@ const O = {
   scroll: args.scroll || 'pingpong',
   hold: parseFloat(args.hold || '0.5'),
   scrollPx: args['scroll-px'] != null ? parseInt(args['scroll-px'], 10) : null,
+  scrollFrom: args['scroll-from'] != null ? parseInt(args['scroll-from'], 10) : null,
+  scrollTo: args['scroll-to'] != null ? parseInt(args['scroll-to'], 10) : null,
   selector: args.selector || null,
   frame: args.frame || 'device',
   pad: parseInt(args.pad || '18', 10),
@@ -164,6 +166,13 @@ async function main() {
 
   console.log(`Scroll: ${usesInner ? 'inner' : 'window'} range ${maxScroll}px | clip ${clip ? clip.width + 'x' + clip.height : 'full ' + vp.width + 'x' + vp.height} @${O.ss}x | ${totalFrames} frames @${O.fps}fps ${O.scroll}`);
 
+  // Scroll band: optionally scroll between two depths instead of from the very top.
+  const absMax = usesInner ? geo.innerMax : geo.winMax;
+  const start = O.scrollFrom != null ? Math.max(0, Math.min(O.scrollFrom, absMax)) : 0;
+  const end = O.scrollTo != null ? Math.max(0, Math.min(O.scrollTo, absMax)) : maxScroll;
+  const span = end - start;
+  if (start || O.scrollTo != null) console.log(`Scroll band: ${start} -> ${end}px`);
+
   // Per-frame scroll positions.
   const positions = [];
   for (let i = 0; i < totalFrames; i++) {
@@ -173,10 +182,10 @@ async function main() {
       const tri = p < 0.5 ? p * 2 : (1 - p) * 2;
       const lo = holdFrac, hi = 1 - holdFrac;
       const m = tri <= lo ? 0 : tri >= hi ? 1 : (tri - lo) / (hi - lo);
-      v = ease(m) * maxScroll;
+      v = start + ease(m) * span;
     } else if (O.scroll === 'down') {
-      v = ease(p) * maxScroll;
-    } else v = 0;
+      v = start + ease(p) * span;
+    } else v = start;
     positions.push(Math.round(v));
   }
 

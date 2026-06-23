@@ -47,6 +47,8 @@ node record.mjs ./creative.html \
 | `--scroll`     | pingpong   | `pingpong` (seamless loop), `down` (one-way), or `none` |
 | `--hold`       | 0.5        | Pause in seconds at each end of a ping-pong |
 | `--scroll-px`  | full       | Override how far it scrolls |
+| `--scroll-from`| 0          | Start the scroll at this depth (px) instead of the top — useful for long feeds where the interesting part is further down |
+| `--scroll-to`  | end        | End the scroll at this depth (px); pair with `--scroll-from` to scroll a specific band (e.g. a feed → an immersive section) |
 | `--selector`   | —          | Clip to a specific element (CSS selector) |
 | `--frame`      | device     | `device` auto-detects a phone/device frame to clip to; `viewport` captures the whole viewport |
 | `--pad`        | 18         | Padding around the device-frame clip |
