@@ -41,6 +41,10 @@ down and back up with eased motion ("ping-pong"), so the last frame equals the f
 - Whole viewport instead of a phone frame: `--frame viewport`.
 - Clip to one element: `--selector ".my-card"`.
 - One-way scroll instead of ping-pong: `--scroll down`.
+- Scroll a specific depth band (long/continuous feeds): `--scroll-from 1700 --scroll-to 2750`.
+- **Smooth video instead of GIF** (best for full-screen photo/video creatives that look
+  choppy as a GIF): set the output to `.webm`, e.g. `--out clip.webm --fps 30`. Insert via
+  Drive → Insert → Video. Use GIF when you need it to loop continuously in the slide.
 
 ## Notes
 

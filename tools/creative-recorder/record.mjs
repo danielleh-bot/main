@@ -34,10 +34,11 @@
 import { chromium } from 'playwright';
 import gifenc from 'gifenc';
 const { GIFEncoder, quantize, applyPalette } = gifenc;
-import { readFileSync, writeFileSync, existsSync } from 'node:fs';
+import { readFileSync, writeFileSync, existsSync, statSync, readdirSync } from 'node:fs';
 import { resolve, isAbsolute, dirname, basename } from 'node:path';
 import { inflateSync } from 'node:zlib';
 import { fileURLToPath } from 'node:url';
+import { spawn } from 'node:child_process';
 import http from 'node:http';
 
 function parseArgs(argv) { const a = { _: [] }; for (let i = 0; i < argv.length; i++) { const t = argv[i]; if (t.startsWith('--')) { a[t.slice(2)] = argv[i + 1]; i++; } else a._.push(t); } return a; }
@@ -66,7 +67,26 @@ const O = {
   dither: args.dither !== 'off',             // ordered dithering to kill photo banding (on by default)
   ditherStrength: parseFloat(args['dither-strength'] || '16'),
   outScale: parseFloat(args['out-scale'] || '1'), // output pixel density vs CSS px (>1 = larger/crisper)
+  vbitrate: args.vbitrate || null,           // WebM target bitrate (e.g. 3M); only for .webm output
 };
+
+// Locate an ffmpeg binary: prefer Playwright's bundled build, fall back to PATH.
+function findFfmpeg() {
+  const roots = [process.env.PLAYWRIGHT_BROWSERS_PATH, resolve(process.env.HOME || '', '.cache/ms-playwright'), '/opt/pw-browsers'].filter(Boolean);
+  for (const root of roots) {
+    try {
+      for (const d of readdirSync(root)) {
+        if (d.startsWith('ffmpeg')) {
+          for (const f of ['ffmpeg-linux', 'ffmpeg-mac', 'ffmpeg-win64.exe', 'ffmpeg']) {
+            const p = resolve(root, d, f);
+            if (existsSync(p)) return p;
+          }
+        }
+      }
+    } catch { /* ignore */ }
+  }
+  return 'ffmpeg'; // assume on PATH
+}
 
 const here = dirname(fileURLToPath(import.meta.url));
 // Optional offline copies of the libraries bundled creatives fetch from unpkg.
@@ -189,33 +209,63 @@ async function main() {
     positions.push(Math.round(v));
   }
 
-  const gif = GIFEncoder();
   const setScroll = usesInner
     ? (y) => page.evaluate((yy) => { const el = document.querySelector('[data-rec-scroll]'); if (el) el.scrollTop = yy; }, y)
     : (y) => page.evaluate((yy) => window.scrollTo(0, yy), y);
 
-  const dsFactor = Math.max(1, O.ss / O.outScale); // render at O.ss, output at O.outScale px density
-  let outW = 0, outH = 0;
-  for (let i = 0; i < totalFrames; i++) {
-    await setScroll(positions[i]);
-    await page.waitForTimeout(10);
-    const buf = await page.screenshot({ type: 'png', clip: clip || undefined });
-    const { data, width, height } = decodePNG(buf);
-    const ds = downscale(data, width, height, dsFactor);
-    outW = ds.width; outH = ds.height;
-    if (O.dither) orderedDither(ds.data, ds.width, ds.height, O.ditherStrength);
-    const palette = quantize(ds.data, O.colors, { format: O.format });
-    const index = applyPalette(ds.data, palette, O.format);
-    gif.writeFrame(index, ds.width, ds.height, { palette, delay: frameDelayMs, repeat: O.loop });
-    process.stdout.write(`\r  frame ${i + 1}/${totalFrames}`);
-  }
-  process.stdout.write('\n');
-  gif.finish();
   const outPath = isAbsolute(O.out) ? O.out : resolve(process.cwd(), O.out);
-  writeFileSync(outPath, gif.bytes());
+  const isWebm = /\.webm$/i.test(O.out);
+  let outW = 0, outH = 0;
+
+  if (isWebm) {
+    // Smooth video path: pipe JPEG frames to the bundled ffmpeg -> VP8 WebM.
+    // Far smaller than GIF for full-screen photographic scrolls and supports high fps.
+    const ffmpeg = findFfmpeg();
+    if (!ffmpeg) { console.error('No ffmpeg found for WebM output.'); await browser.close(); process.exit(1); }
+    const clipW = clip ? clip.width : vp.width;
+    const clipH = clip ? clip.height : vp.height;
+    outW = Math.round(clipW * O.outScale / 2) * 2;   // even dims for VP8
+    outH = Math.round(clipH * O.outScale / 2) * 2;
+    const ff = spawn(ffmpeg, [
+      '-y', '-f', 'image2pipe', '-c:v', 'mjpeg', '-r', String(O.fps), '-i', 'pipe:0',
+      '-vf', `scale=${outW}:${outH}:flags=lanczos`,
+      '-c:v', 'libvpx', '-b:v', (O.vbitrate || '3M'), '-pix_fmt', 'yuv420p',
+      '-an', outPath,
+    ], { stdio: ['pipe', 'ignore', 'ignore'] });
+    for (let i = 0; i < totalFrames; i++) {
+      await setScroll(positions[i]);
+      await page.waitForTimeout(10);
+      const buf = await page.screenshot({ type: 'jpeg', quality: 92, clip: clip || undefined });
+      await new Promise((res) => ff.stdin.write(buf) ? res() : ff.stdin.once('drain', res));
+      process.stdout.write(`\r  frame ${i + 1}/${totalFrames}`);
+    }
+    ff.stdin.end();
+    await new Promise((res) => ff.on('close', res));
+    process.stdout.write('\n');
+  } else {
+    const gif = GIFEncoder();
+    const dsFactor = Math.max(1, O.ss / O.outScale); // render at O.ss, output at O.outScale px density
+    for (let i = 0; i < totalFrames; i++) {
+      await setScroll(positions[i]);
+      await page.waitForTimeout(10);
+      const buf = await page.screenshot({ type: 'png', clip: clip || undefined });
+      const { data, width, height } = decodePNG(buf);
+      const ds = downscale(data, width, height, dsFactor);
+      outW = ds.width; outH = ds.height;
+      if (O.dither) orderedDither(ds.data, ds.width, ds.height, O.ditherStrength);
+      const palette = quantize(ds.data, O.colors, { format: O.format });
+      const index = applyPalette(ds.data, palette, O.format);
+      gif.writeFrame(index, ds.width, ds.height, { palette, delay: frameDelayMs, repeat: O.loop });
+      process.stdout.write(`\r  frame ${i + 1}/${totalFrames}`);
+    }
+    process.stdout.write('\n');
+    gif.finish();
+    writeFileSync(outPath, gif.bytes());
+  }
   await browser.close();
   if (server) await new Promise(r => server.close(r));
-  console.log(`Done: ${outPath} (${(gif.bytes().length / 1024).toFixed(0)} KB, ${outW}x${outH})`);
+  const kb = (statSync(outPath).size / 1024).toFixed(0);
+  console.log(`Done: ${outPath} (${kb} KB, ${outW}x${outH})`);
 }
 
 // Ordered (Bayer 8x8) dithering: jitter each channel by a sub-step amount before

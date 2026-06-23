@@ -54,7 +54,8 @@ node record.mjs ./creative.html \
 | `--pad`        | 18         | Padding around the device-frame clip |
 | `--wait`       | 6000       | Settle time (ms) after load before recording |
 | `--loop`       | 0          | GIF loop count, 0 = infinite |
-| `--colors`     | 256        | Max palette colors per frame (2–256); lower shrinks the file |
+| `--colors`     | 256        | Max palette colors per frame (2–256); lower shrinks the file (GIF only) |
+| `--vbitrate`   | 3M         | WebM target bitrate (only when `--out` ends in `.webm`) |
 | `--format`     | rgb565     | Palette precision: `rgb565` (best for photos), `rgb444`, `rgba4444` |
 | `--out-scale`  | 1          | Output pixel density vs CSS px; `>1` renders larger/crisper (pair with a higher `--ss`) |
 | `--dither`     | on         | Ordered dithering to reduce banding; pass `--dither off` for full-screen photo scrolls (avoids shimmer + smaller file) |
@@ -83,9 +84,23 @@ shorten `--duration`, reduce `--out-scale`/`--colors`, and keep `--dither off`. 
 maximum crispness on photographic content, raise `--ss` and `--out-scale` together (e.g.
 `--ss 3 --out-scale 1.3`) and accept a larger file.
 
-## Why GIF and not MP4?
+## GIF vs WebM video
 
-GIF pastes into a slide as a self-looping image — the simplest workflow. MP4/WebM would
-need to be uploaded to Drive and inserted as a video object. (The encoder bundled with
-Playwright can only produce WebM/GIF, not MP4, anyway.) If you specifically need video,
-record frames the same way and encode a WebM with `ffmpeg`.
+Set the output extension to choose the format:
+
+```bash
+node record.mjs creative.html --out clip.gif    # animated GIF (loops as a slide image)
+node record.mjs creative.html --out clip.webm    # smooth 30fps WebM video (tiny file)
+```
+
+- **GIF** pastes straight into a slide (`Insert → Image`) and loops forever on its own.
+  Great for UI-heavy creatives. But it's limited to ~256 colors per frame and gets large
+  and choppy on **full-screen photographic/video content**.
+- **WebM** (encoded via Playwright's bundled ffmpeg → VP8) is **far smoother (30fps) and
+  much smaller** for photo/video-heavy creatives. Use it when a GIF looks choppy or
+  bloated. Insert it via `Insert → Video → Google Drive` (upload the file to Drive first);
+  enable *Autoplay* in the video's format options. Note: Slides plays videos once per
+  presentation rather than looping continuously like a GIF.
+
+Rule of thumb: **mostly-static UI → GIF; full-screen photos/video → WebM.** MP4 isn't
+supported (the bundled encoder only does VP8/WebM).
