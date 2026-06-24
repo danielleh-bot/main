@@ -53,6 +53,26 @@ node record.mjs ./creative.html \
 | `--wait`       | 6000       | Settle time (ms) after load before recording |
 | `--loop`       | 0          | GIF loop count, 0 = infinite |
 | `--colors`     | 256        | Max palette colors per frame (2–256); lower shrinks the file |
+| `--mobile`     | off        | Emulate a mobile phone browser (mobile viewport, touch, mobile UA). Defaults to a 390×844 viewport and `--frame viewport` so you capture the site's responsive layout. |
+| `--dismiss`    | off        | Close cookie / subscribe / newsletter / paywall overlays after load, before recording. `--dismiss auto` uses built-in heuristics; or pass a comma-separated CSS selector list (e.g. `--dismiss ".close-btn,#newsletter-close"`) to click specific controls. Heuristics always run too. |
+
+### Recording a live mobile page with a popup
+
+```bash
+# Phone-sized capture of a news article, closing the subscribe popup first
+node record.mjs "https://example.com/some-article" --mobile --dismiss auto --out article.gif
+```
+
+`--dismiss auto` presses Escape, clicks close controls (matched by `aria-label`,
+`title`, button text like "Close" / "No thanks", and `close`/`dismiss` class names) across
+the main frame and same-origin iframes, and as a last resort removes full-viewport modal
+backdrops and restores page scrolling — repeated over a few rounds since some overlays
+mount in stages.
+
+> **Network:** recording a live URL needs outbound web access. Requests honour
+> `HTTPS_PROXY` automatically. In a locked-down environment whose egress policy blocks the
+> target host, the page can't load — open web access in the environment's network policy
+> first. (Local HTML files always work; they need no network.)
 
 ## What it handles automatically
 

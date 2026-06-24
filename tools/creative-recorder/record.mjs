@@ -25,13 +25,24 @@
  *   --hold <sec>        Pause at each end of a pingpong (default: 0.5)
  *   --scroll-px <px>    Override scroll distance (default: full content)
  *   --selector <css>    Clip to this element (overrides device auto-detect)
- *   --frame <mode>      device | viewport (default: device — auto-detect phone frame)
+ *   --frame <mode>      device | viewport (default: device — auto-detect phone frame;
+ *                       forced to viewport in --mobile mode)
  *   --pad <px>          Padding around the device frame clip (default: 18)
  *   --wait <ms>         Settle time after load before recording (default: 6000)
  *   --loop <n>          GIF loop count, 0 = infinite (default: 0)
  *   --colors <n>        Max palette colors per frame, 2..256 (default: 256)
+ *   --mobile            Emulate a mobile phone browser (mobile viewport, touch, mobile
+ *                       user-agent — sites render their responsive/mobile layout).
+ *                       Defaults to a 390x844 viewport and --frame viewport.
+ *   --dismiss <spec>    Close overlays (cookie / subscribe / newsletter / paywall popups)
+ *                       after load, before recording. "auto" uses built-in heuristics;
+ *                       or pass a comma-separated CSS selector list to click. Heuristics
+ *                       run in both modes. Default: off.
+ *
+ * Outbound requests honour HTTPS_PROXY / https_proxy from the environment (so it works
+ * behind an egress proxy); localhost is always bypassed for the local file server.
  */
-import { chromium } from 'playwright';
+import { chromium, devices } from 'playwright';
 import gifenc from 'gifenc';
 const { GIFEncoder, quantize, applyPalette } = gifenc;
 import { readFileSync, writeFileSync, existsSync } from 'node:fs';
@@ -40,26 +51,35 @@ import { inflateSync } from 'node:zlib';
 import { fileURLToPath } from 'node:url';
 import http from 'node:http';
 
-function parseArgs(argv) { const a = { _: [] }; for (let i = 0; i < argv.length; i++) { const t = argv[i]; if (t.startsWith('--')) { a[t.slice(2)] = argv[i + 1]; i++; } else a._.push(t); } return a; }
+// Value-less boolean flags: they never consume the following token.
+const BOOL_FLAGS = new Set(['mobile']);
+function parseArgs(argv) { const a = { _: [] }; for (let i = 0; i < argv.length; i++) { const t = argv[i]; if (t.startsWith('--')) { const k = t.slice(2); if (BOOL_FLAGS.has(k)) { a[k] = true; } else { a[k] = argv[i + 1]; i++; } } else a._.push(t); } return a; }
 const args = parseArgs(process.argv.slice(2));
 const target = args._[0];
 if (!target) { console.error('Usage: node record.mjs <url-or-file> [options]'); process.exit(1); }
+const mobile = !!args.mobile;
+// --dismiss with no value (or a bare flag) means "auto"; otherwise it's a selector list.
+const dismiss = 'dismiss' in args
+  ? (args.dismiss === undefined || String(args.dismiss).startsWith('--') ? 'auto' : args.dismiss)
+  : null;
 const O = {
   out: args.out || 'recording.gif',
   duration: parseFloat(args.duration || '5'),
   fps: parseInt(args.fps || '14', 10),
-  width: parseInt(args.width || '1200', 10),
-  height: parseInt(args.height || '1000', 10),
+  width: parseInt(args.width || (mobile ? '390' : '1200'), 10),
+  height: parseInt(args.height || (mobile ? '844' : '1000'), 10),
   ss: parseFloat(args.ss || '2'),
   scroll: args.scroll || 'pingpong',
   hold: parseFloat(args.hold || '0.5'),
   scrollPx: args['scroll-px'] != null ? parseInt(args['scroll-px'], 10) : null,
   selector: args.selector || null,
-  frame: args.frame || 'device',
+  frame: args.frame || (mobile ? 'viewport' : 'device'),
   pad: parseInt(args.pad || '18', 10),
   wait: parseInt(args.wait || '6000', 10),
   loop: parseInt(args.loop ?? '0', 10),
   colors: Math.max(2, Math.min(256, parseInt(args.colors || '256', 10))),
+  mobile,
+  dismiss,
 };
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -96,8 +116,26 @@ async function main() {
     navUrl = `http://127.0.0.1:${server.address().port}/`;
   }
 
-  const browser = await chromium.launch({ args: ['--no-sandbox', '--disable-dev-shm-usage'] });
-  const ctx = await browser.newContext({ viewport: { width: O.width, height: O.height }, deviceScaleFactor: O.ss, ignoreHTTPSErrors: true });
+  // Route outbound traffic through an egress proxy if one is configured (HTTPS_PROXY) —
+  // but only for remote URL targets. Local-file mode serves the page (and its react/babel
+  // fallbacks) from 127.0.0.1, which must never go through the proxy.
+  const proxyUrl = process.env.HTTPS_PROXY || process.env.https_proxy || null;
+  const isRemote = /^https?:\/\//i.test(target);
+  const launchOpts = { args: ['--no-sandbox', '--disable-dev-shm-usage'] };
+  if (proxyUrl && isRemote) { launchOpts.proxy = { server: proxyUrl, bypass: 'localhost,127.0.0.1,::1' }; }
+  const browser = await chromium.launch(launchOpts);
+
+  // In --mobile mode, adopt a phone device profile (mobile UA + touch + isMobile) so the
+  // site serves its responsive layout. deviceScaleFactor stays at O.ss to keep the
+  // supersample/downscale math consistent.
+  const ctxOpts = { viewport: { width: O.width, height: O.height }, deviceScaleFactor: O.ss, ignoreHTTPSErrors: true };
+  if (O.mobile) {
+    const dev = devices['iPhone 13'] || {};
+    ctxOpts.userAgent = dev.userAgent;
+    ctxOpts.isMobile = dev.isMobile ?? true;
+    ctxOpts.hasTouch = dev.hasTouch ?? true;
+  }
+  const ctx = await browser.newContext(ctxOpts);
 
   // Serve React/ReactDOM/Babel from local copies *only if present* (offline fallback);
   // otherwise let the request hit the network normally.
@@ -113,6 +151,8 @@ async function main() {
   const page = await ctx.newPage();
   await page.goto(navUrl, { waitUntil: 'load' }).catch(() => {});
   await page.waitForTimeout(O.wait);
+
+  if (O.dismiss) await dismissOverlays(page, O.dismiss);
 
   // Detect inner scroll container + device frame.
   const geo = await page.evaluate((PAD) => {
@@ -201,6 +241,67 @@ async function main() {
   await browser.close();
   if (server) await new Promise(r => server.close(r));
   console.log(`Done: ${outPath} (${(gif.bytes().length / 1024).toFixed(0)} KB, ${outW}x${outH})`);
+}
+
+// Dismiss cookie / subscribe / newsletter / paywall overlays before recording.
+// Strategy per round: press Escape, click explicit selectors, click heuristic close
+// controls (by aria-label / text / common class names), and as a last resort strip
+// full-viewport fixed backdrops and restore scrolling. Runs across the main frame and
+// any same-origin iframes (subscribe popups are often iframed), repeated a few times
+// because some overlays mount in stages.
+async function dismissOverlays(page, spec) {
+  const explicit = spec && spec !== 'auto' ? spec.split(',').map(s => s.trim()).filter(Boolean) : [];
+  let totalClosed = 0;
+  for (let round = 0; round < 3; round++) {
+    await page.keyboard.press('Escape').catch(() => {});
+    let closedThisRound = 0;
+    for (const frame of page.frames()) {
+      const n = await frame.evaluate(({ explicit }) => {
+        const isVisible = (el) => { const b = el.getBoundingClientRect(); const cs = getComputedStyle(el); return b.width > 0 && b.height > 0 && cs.visibility !== 'hidden' && cs.display !== 'none' && cs.opacity !== '0'; };
+        let closed = 0;
+        // 1. Explicit, caller-supplied selectors.
+        for (const sel of explicit) {
+          for (const el of document.querySelectorAll(sel)) { if (isVisible(el)) { el.click(); closed++; } }
+        }
+        // 2. Heuristic close controls.
+        const closeRe = /^(close|close dialog|close modal|dismiss|no thanks|no, ?thanks|not now|maybe later|skip|continue without|×|✕|✖|x)$/i;
+        const labelRe = /close|dismiss|no thanks|not now|maybe later/i;
+        const controls = document.querySelectorAll('button,a,[role="button"],[aria-label],[class*="close" i],[class*="dismiss" i],[id*="close" i]');
+        for (const el of controls) {
+          if (!isVisible(el)) continue;
+          const al = (el.getAttribute('aria-label') || '').trim();
+          const tl = (el.getAttribute('title') || '').trim();
+          const txt = (el.textContent || '').trim();
+          if ((al && labelRe.test(al)) || (tl && labelRe.test(tl)) || (txt.length <= 24 && closeRe.test(txt))) {
+            el.click(); closed++;
+            if (closed > 6) break; // safety: don't go on a clicking spree
+          }
+        }
+        // 3. Remove lingering full-viewport fixed/sticky backdrops and restore scroll.
+        // Runs even after a close click, because some close buttons don't actually tear
+        // the overlay down. Strict heuristics (covers most of the viewport, high z-index,
+        // modal-ish class/id) keep this from touching real article content.
+        {
+          const vw = innerWidth, vh = innerHeight;
+          for (const el of document.querySelectorAll('div,section,aside')) {
+            const cs = getComputedStyle(el); if (!/fixed|sticky/.test(cs.position)) continue;
+            const b = el.getBoundingClientRect();
+            const coversMost = b.width >= vw * 0.9 && b.height >= vh * 0.6 && b.top <= 5;
+            const looksModal = /modal|overlay|popup|paywall|subscri|newsletter|gateway|backdrop|interstitial/i.test((el.className || '') + ' ' + (el.id || ''));
+            if (coversMost && looksModal && +cs.zIndex >= 100) { el.remove(); closed++; }
+          }
+        }
+        // Always restore scrolling that overlays tend to lock.
+        for (const el of [document.documentElement, document.body]) { el.style.overflow = ''; el.style.position = ''; }
+        return closed;
+      }, { explicit }).catch(() => 0);
+      closedThisRound += n;
+    }
+    totalClosed += closedThisRound;
+    if (closedThisRound === 0 && round > 0) break;
+    await page.waitForTimeout(500);
+  }
+  console.log(`Dismiss: closed ${totalClosed} overlay element(s)`);
 }
 
 // Box-average downscale of an RGBA buffer by factor f.
