@@ -34,10 +34,11 @@
 import { chromium } from 'playwright';
 import gifenc from 'gifenc';
 const { GIFEncoder, quantize, applyPalette } = gifenc;
-import { readFileSync, writeFileSync, existsSync } from 'node:fs';
+import { readFileSync, writeFileSync, existsSync, statSync, readdirSync } from 'node:fs';
 import { resolve, isAbsolute, dirname, basename } from 'node:path';
 import { inflateSync } from 'node:zlib';
 import { fileURLToPath } from 'node:url';
+import { spawn } from 'node:child_process';
 import http from 'node:http';
 
 function parseArgs(argv) { const a = { _: [] }; for (let i = 0; i < argv.length; i++) { const t = argv[i]; if (t.startsWith('--')) { a[t.slice(2)] = argv[i + 1]; i++; } else a._.push(t); } return a; }
@@ -54,13 +55,41 @@ const O = {
   scroll: args.scroll || 'pingpong',
   hold: parseFloat(args.hold || '0.5'),
   scrollPx: args['scroll-px'] != null ? parseInt(args['scroll-px'], 10) : null,
+  scrollFrom: args['scroll-from'] != null ? parseInt(args['scroll-from'], 10) : null,
+  scrollTo: args['scroll-to'] != null ? parseInt(args['scroll-to'], 10) : null,
   selector: args.selector || null,
   frame: args.frame || 'device',
   pad: parseInt(args.pad || '18', 10),
   wait: parseInt(args.wait || '6000', 10),
   loop: parseInt(args.loop ?? '0', 10),
   colors: Math.max(2, Math.min(256, parseInt(args.colors || '256', 10))),
+  format: args.format || 'rgb565',           // palette precision: rgb565 (best) | rgb444 | rgba4444
+  dither: args.dither !== 'off',             // ordered dithering to kill photo banding (on by default)
+  ditherStrength: parseFloat(args['dither-strength'] || '16'),
+  outScale: parseFloat(args['out-scale'] || '1'), // output pixel density vs CSS px (>1 = larger/crisper)
+  vbitrate: args.vbitrate || null,           // WebM target bitrate (e.g. 3M); only for .webm output
+  clean: args.clean !== 'off',               // auto-dismiss cookie/consent/subscribe overlays (on by default)
+  keepSnap: args['keep-snap'] === 'true',     // keep CSS scroll-snap (off by default -> snap disabled for smooth scroll)
+  settle: parseInt(args.settle || '40', 10), // ms to wait per frame for paint/lazy-load
 };
+
+// Locate an ffmpeg binary: prefer Playwright's bundled build, fall back to PATH.
+function findFfmpeg() {
+  const roots = [process.env.PLAYWRIGHT_BROWSERS_PATH, resolve(process.env.HOME || '', '.cache/ms-playwright'), '/opt/pw-browsers'].filter(Boolean);
+  for (const root of roots) {
+    try {
+      for (const d of readdirSync(root)) {
+        if (d.startsWith('ffmpeg')) {
+          for (const f of ['ffmpeg-linux', 'ffmpeg-mac', 'ffmpeg-win64.exe', 'ffmpeg']) {
+            const p = resolve(root, d, f);
+            if (existsSync(p)) return p;
+          }
+        }
+      }
+    } catch { /* ignore */ }
+  }
+  return 'ffmpeg'; // assume on PATH
+}
 
 const here = dirname(fileURLToPath(import.meta.url));
 // Optional offline copies of the libraries bundled creatives fetch from unpkg.
@@ -113,6 +142,7 @@ async function main() {
   const page = await ctx.newPage();
   await page.goto(navUrl, { waitUntil: 'load' }).catch(() => {});
   await page.waitForTimeout(O.wait);
+  await cleanPage(page, O);
 
   // Detect inner scroll container + device frame.
   const geo = await page.evaluate((PAD) => {
@@ -156,51 +186,144 @@ async function main() {
 
   const totalFrames = Math.max(4, Math.round(O.duration * O.fps));
   const frameDelayMs = Math.round(1000 / O.fps);
-  const holdFrac = Math.min(0.4, (O.hold * O.fps) / totalFrames);
 
-  console.log(`Scroll: ${usesInner ? 'inner' : 'window'} range ${maxScroll}px | clip ${clip ? clip.width + 'x' + clip.height : 'full ' + vp.width + 'x' + vp.height} @${O.ss}x | ${totalFrames} frames @${O.fps}fps ${O.scroll}`);
+  // Scroll band: optionally scroll between two depths instead of from the very top.
+  const absMax = usesInner ? geo.innerMax : geo.winMax;
+  const start = O.scrollFrom != null ? Math.max(0, Math.min(O.scrollFrom, absMax)) : 0;
+  const end = O.scrollTo != null ? Math.max(0, Math.min(O.scrollTo, absMax)) : maxScroll;
+  const span = end - start;
+  if (start || O.scrollTo != null) console.log(`Scroll band: ${start} -> ${end}px`);
 
-  // Per-frame scroll positions.
+  // We capture ONE smooth forward pass, then mirror the frames for a seamless loop.
+  // Mirroring (forward + reversed) is always seamless and never re-scrolls dynamic /
+  // virtualized content, so lazy-loaded feeds don't snap or pop on the way back.
+  const loop = O.scroll === 'pingpong';
+  const capN = loop ? Math.max(2, Math.round(totalFrames / 2) + 1) : totalFrames;
   const positions = [];
-  for (let i = 0; i < totalFrames; i++) {
-    const p = i / (totalFrames - 1);
-    let v;
-    if (O.scroll === 'pingpong') {
-      const tri = p < 0.5 ? p * 2 : (1 - p) * 2;
-      const lo = holdFrac, hi = 1 - holdFrac;
-      const m = tri <= lo ? 0 : tri >= hi ? 1 : (tri - lo) / (hi - lo);
-      v = ease(m) * maxScroll;
-    } else if (O.scroll === 'down') {
-      v = ease(p) * maxScroll;
-    } else v = 0;
-    positions.push(Math.round(v));
+  for (let i = 0; i < capN; i++) {
+    const p = capN === 1 ? 0 : i / (capN - 1);
+    positions.push(Math.round(start + (O.scroll === 'none' ? 0 : ease(p)) * span));
   }
 
-  const gif = GIFEncoder();
-  const setScroll = usesInner
-    ? (y) => page.evaluate((yy) => { const el = document.querySelector('[data-rec-scroll]'); if (el) el.scrollTop = yy; }, y)
-    : (y) => page.evaluate((yy) => window.scrollTo(0, yy), y);
+  console.log(`Scroll: ${usesInner ? 'inner' : 'window'} ${start}->${end}px | clip ${clip ? clip.width + 'x' + clip.height : 'full ' + vp.width + 'x' + vp.height} @${O.ss}x | ${loop ? '2x' : ''}${capN} frames @${O.fps}fps ${O.scroll}`);
 
-  let outW = 0, outH = 0;
-  for (let i = 0; i < totalFrames; i++) {
-    await setScroll(positions[i]);
-    await page.waitForTimeout(10);
-    const buf = await page.screenshot({ type: 'png', clip: clip || undefined });
-    const { data, width, height } = decodePNG(buf);
-    const ds = downscale(data, width, height, O.ss);
-    outW = ds.width; outH = ds.height;
-    const palette = quantize(ds.data, O.colors, { format: 'rgb444' });
-    const index = applyPalette(ds.data, palette, 'rgb444');
-    gif.writeFrame(index, ds.width, ds.height, { palette, delay: frameDelayMs, repeat: O.loop });
-    process.stdout.write(`\r  frame ${i + 1}/${totalFrames}`);
+  // Set scroll position and verify it actually reached the target — retrying gives
+  // virtualized/lazy-loaded feeds time to render more content (so positions don't cap).
+  const rawSet = usesInner
+    ? (y) => page.evaluate((yy) => { const el = document.querySelector('[data-rec-scroll]'); if (!el) return 0; el.scrollTop = yy; return Math.round(el.scrollTop); }, y)
+    : (y) => page.evaluate((yy) => { window.scrollTo(0, yy); return Math.round(window.scrollY); }, y);
+  async function gotoScroll(target) {
+    let got = await rawSet(target), tries = 0;
+    while (got < target - 2 && tries < 25) { await page.waitForTimeout(50); got = await rawSet(target); tries++; }
+    return got;
+  }
+
+  // Capture unique forward frames.
+  const isWebm = /\.webm$/i.test(O.out);
+  const shots = [];
+  let lastGot = -1, stuck = 0;
+  for (let i = 0; i < capN; i++) {
+    const got = await gotoScroll(positions[i]);
+    if (got <= lastGot && positions[i] > lastGot) stuck++;
+    lastGot = Math.max(lastGot, got);
+    await page.waitForTimeout(O.settle);
+    shots.push(await page.screenshot({ type: isWebm ? 'jpeg' : 'png', quality: 92, clip: clip || undefined }));
+    process.stdout.write(`\r  capture ${i + 1}/${capN} (y=${got})   `);
   }
   process.stdout.write('\n');
-  gif.finish();
+  if (stuck > capN * 0.15) console.log(`  note: ${stuck}/${capN} frames could not advance (content end or load limit)`);
+
+  // Playback order: forward, then reversed without duplicating the endpoints.
+  const order = shots.map((_, i) => i);
+  if (loop) for (let i = shots.length - 2; i >= 1; i--) order.push(i);
+
   const outPath = isAbsolute(O.out) ? O.out : resolve(process.cwd(), O.out);
-  writeFileSync(outPath, gif.bytes());
+  let outW = 0, outH = 0;
+
+  if (isWebm) {
+    const ffmpeg = findFfmpeg();
+    if (!ffmpeg) { console.error('No ffmpeg found for WebM output.'); await browser.close(); process.exit(1); }
+    const clipW = clip ? clip.width : vp.width;
+    const clipH = clip ? clip.height : vp.height;
+    outW = Math.round(clipW * O.outScale / 2) * 2;   // even dims for VP8
+    outH = Math.round(clipH * O.outScale / 2) * 2;
+    const ff = spawn(ffmpeg, [
+      '-y', '-f', 'image2pipe', '-c:v', 'mjpeg', '-r', String(O.fps), '-i', 'pipe:0',
+      '-vf', `scale=${outW}:${outH}:flags=lanczos`,
+      '-c:v', 'libvpx', '-b:v', (O.vbitrate || '3M'), '-pix_fmt', 'yuv420p',
+      '-an', outPath,
+    ], { stdio: ['pipe', 'ignore', 'ignore'] });
+    for (const idx of order) await new Promise((res) => ff.stdin.write(shots[idx]) ? res() : ff.stdin.once('drain', res));
+    ff.stdin.end();
+    await new Promise((res) => ff.on('close', res));
+  } else {
+    // Encode each unique frame once, then write them in playback order.
+    const dsFactor = Math.max(1, O.ss / O.outScale);
+    const enc = shots.map((buf) => {
+      const { data, width, height } = decodePNG(buf);
+      const ds = downscale(data, width, height, dsFactor);
+      if (O.dither) orderedDither(ds.data, ds.width, ds.height, O.ditherStrength);
+      const palette = quantize(ds.data, O.colors, { format: O.format });
+      const index = applyPalette(ds.data, palette, O.format);
+      return { index, palette, w: ds.width, h: ds.height };
+    });
+    outW = enc[0].w; outH = enc[0].h;
+    const gif = GIFEncoder();
+    for (const idx of order) gif.writeFrame(enc[idx].index, enc[idx].w, enc[idx].h, { palette: enc[idx].palette, delay: frameDelayMs, repeat: O.loop });
+    gif.finish();
+    writeFileSync(outPath, gif.bytes());
+  }
   await browser.close();
   if (server) await new Promise(r => server.close(r));
-  console.log(`Done: ${outPath} (${(gif.bytes().length / 1024).toFixed(0)} KB, ${outW}x${outH})`);
+  const kb = (statSync(outPath).size / 1024).toFixed(0);
+  console.log(`Done: ${outPath} (${kb} KB, ${outW}x${outH}, ${order.length} frames played)`);
+}
+
+// Disable scroll-snap (so scrolling glides instead of jumping card-to-card) and
+// auto-dismiss cookie/consent/subscribe/paywall overlays so live pages record clean.
+async function cleanPage(page, O) {
+  if (!O.keepSnap) {
+    await page.addStyleTag({ content: `*{scroll-snap-type:none !important;scroll-snap-align:none !important;scroll-behavior:auto !important;}` }).catch(() => {});
+  }
+  if (!O.clean) return;
+  const clickSel = ['#onetrust-accept-btn-handler', '#truste-consent-button', '.osano-cm-accept-all', '.osano-cm-accept',
+    'button[aria-label*="accept" i]', 'button[aria-label*="agree" i]', 'button[title*="accept" i]',
+    '[id*="accept-all" i]', '[class*="accept-all" i]', 'button[mode="primary"]'];
+  for (const s of clickSel) { try { const el = await page.$(s); if (el) await el.click({ timeout: 600 }).catch(() => {}); } catch { /* ignore */ } }
+  await page.addStyleTag({ content: `
+    #onetrust-consent-sdk,#onetrust-banner-sdk,.onetrust-pc-dark-filter,.osano-cm-window,#truste-consent-track,
+    [id*="gdpr" i],[class*="gdpr" i],[id*="cookie-banner" i],[class*="cookie-banner" i],[id*="consent" i],[class*="consent" i],
+    [id*="paywall" i],[class*="paywall" i],[class*="newsletter-signup" i],[class*="modal-overlay" i],[class*="interstitial" i],
+    .gnt_pr,.gnt_ss { display:none !important; visibility:hidden !important; }
+  ` }).catch(() => {});
+  // Heuristically drop any leftover full-screen fixed/sticky overlay (modals).
+  await page.evaluate(() => {
+    for (const el of document.querySelectorAll('body *')) {
+      const cs = getComputedStyle(el); const r = el.getBoundingClientRect();
+      if ((cs.position === 'fixed' || cs.position === 'sticky') && r.width >= innerWidth * 0.9 && r.height >= innerHeight * 0.8 && (parseInt(cs.zIndex) || 0) >= 1000) el.style.display = 'none';
+    }
+  }).catch(() => {});
+}
+
+// Ordered (Bayer 8x8) dithering: jitter each channel by a sub-step amount before
+// palette quantization so nearest-color mapping alternates between neighbouring palette
+// entries, breaking up the banding/posterization GIFs show on photographic gradients.
+const BAYER8 = (() => {
+  const m = [[0, 32, 8, 40, 2, 34, 10, 42], [48, 16, 56, 24, 50, 18, 58, 26], [12, 44, 4, 36, 14, 46, 6, 38], [60, 28, 52, 20, 62, 30, 54, 22], [3, 35, 11, 43, 1, 33, 9, 41], [51, 19, 59, 27, 49, 17, 57, 25], [15, 47, 7, 39, 13, 45, 5, 37], [63, 31, 55, 23, 61, 29, 53, 21]];
+  const out = new Float32Array(64);
+  for (let y = 0; y < 8; y++) for (let x = 0; x < 8; x++) out[y * 8 + x] = m[y][x] / 64 - 0.5; // -0.5..0.5
+  return out;
+})();
+function orderedDither(data, w, h, strength) {
+  if (!strength) return;
+  for (let y = 0; y < h; y++) {
+    const brow = (y & 7) * 8;
+    for (let x = 0; x < w; x++) {
+      const t = BAYER8[brow + (x & 7)] * strength;
+      const i = (y * w + x) * 4;
+      data[i] += t; data[i + 1] += t; data[i + 2] += t; // Uint8ClampedArray clamps for us
+    }
+  }
 }
 
 // Box-average downscale of an RGBA buffer by factor f.

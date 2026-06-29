@@ -47,16 +47,34 @@ node record.mjs ./creative.html \
 | `--scroll`     | pingpong   | `pingpong` (seamless loop), `down` (one-way), or `none` |
 | `--hold`       | 0.5        | Pause in seconds at each end of a ping-pong |
 | `--scroll-px`  | full       | Override how far it scrolls |
+| `--scroll-from`| 0          | Start the scroll at this depth (px) instead of the top — useful for long feeds where the interesting part is further down |
+| `--scroll-to`  | end        | End the scroll at this depth (px); pair with `--scroll-from` to scroll a specific band (e.g. a feed → an immersive section) |
 | `--selector`   | —          | Clip to a specific element (CSS selector) |
 | `--frame`      | device     | `device` auto-detects a phone/device frame to clip to; `viewport` captures the whole viewport |
 | `--pad`        | 18         | Padding around the device-frame clip |
 | `--wait`       | 6000       | Settle time (ms) after load before recording |
 | `--loop`       | 0          | GIF loop count, 0 = infinite |
-| `--colors`     | 256        | Max palette colors per frame (2–256); lower shrinks the file |
+| `--colors`     | 256        | Max palette colors per frame (2–256); lower shrinks the file (GIF only) |
+| `--vbitrate`   | 3M         | WebM target bitrate (only when `--out` ends in `.webm`) |
+| `--clean`      | on         | Auto-dismiss cookie/consent/subscribe/paywall overlays; `--clean off` to disable |
+| `--keep-snap`  | false      | Keep CSS scroll-snap (by default it's disabled for smooth scrolling) |
+| `--settle`     | 40         | ms waited per frame for paint / lazy-loaded content |
+| `--format`     | rgb565     | Palette precision: `rgb565` (best for photos), `rgb444`, `rgba4444` |
+| `--out-scale`  | 1          | Output pixel density vs CSS px; `>1` renders larger/crisper (pair with a higher `--ss`) |
+| `--dither`     | on         | Ordered dithering to reduce banding; pass `--dither off` for full-screen photo scrolls (avoids shimmer + smaller file) |
+| `--dither-strength` | 16    | Dither intensity when enabled |
 
 ## What it handles automatically
 
 - **Plain pages / HTML files** — scrolls the window.
+- **Smooth scrolling by default** — disables CSS `scroll-snap` during capture so feeds
+  *glide* instead of jumping card-to-card, and captures one forward pass then mirrors the
+  frames for a perfectly seamless loop (never re-scrolls dynamic content).
+- **Virtualized / lazy-loaded "continuous" feeds** — verifies each scroll position actually
+  landed and waits for more content to render, so the scroll doesn't cap or snap.
+- **Live pages** — auto-dismisses common cookie/consent/subscribe/paywall overlays
+  (OneTrust, Osano, TrustArc, GDPR/consent banners, full-screen modals). Disable with
+  `--clean off`; keep snapping with `--keep-snap true`.
 - **Self-contained "bundled" creatives** (e.g. Taboola TrueNative standalone ad units that
   boot a React/JSX app and scroll inside a phone frame):
   - The file is served over a local HTTP server, because these creatives use a `fetch()`
@@ -70,13 +88,30 @@ node record.mjs ./creative.html \
 
 ## Notes on file size
 
-A 5s phone-frame clip lands around 3–6 MB depending on fps and content. To shrink it:
-lower `--fps` (e.g. 12), shorten `--duration`, or reduce `--colors` (e.g. 128). One GIF of
-a few MB is fine in a deck; just avoid putting many very large GIFs on one slide.
+A 5s phone-frame clip with a mostly-static UI lands around 3–6 MB. **Full-screen
+photo/video feeds are the hard case**: every frame is a different image so GIF compression
+can't help, and a crisp 6s clip can run ~9 MB. To shrink: lower `--fps` (e.g. 10–12),
+shorten `--duration`, reduce `--out-scale`/`--colors`, and keep `--dither off`. For
+maximum crispness on photographic content, raise `--ss` and `--out-scale` together (e.g.
+`--ss 3 --out-scale 1.3`) and accept a larger file.
 
-## Why GIF and not MP4?
+## GIF vs WebM video
 
-GIF pastes into a slide as a self-looping image — the simplest workflow. MP4/WebM would
-need to be uploaded to Drive and inserted as a video object. (The encoder bundled with
-Playwright can only produce WebM/GIF, not MP4, anyway.) If you specifically need video,
-record frames the same way and encode a WebM with `ffmpeg`.
+Set the output extension to choose the format:
+
+```bash
+node record.mjs creative.html --out clip.gif    # animated GIF (loops as a slide image)
+node record.mjs creative.html --out clip.webm    # smooth 30fps WebM video (tiny file)
+```
+
+- **GIF** pastes straight into a slide (`Insert → Image`) and loops forever on its own.
+  Great for UI-heavy creatives. But it's limited to ~256 colors per frame and gets large
+  and choppy on **full-screen photographic/video content**.
+- **WebM** (encoded via Playwright's bundled ffmpeg → VP8) is **far smoother (30fps) and
+  much smaller** for photo/video-heavy creatives. Use it when a GIF looks choppy or
+  bloated. Insert it via `Insert → Video → Google Drive` (upload the file to Drive first);
+  enable *Autoplay* in the video's format options. Note: Slides plays videos once per
+  presentation rather than looping continuously like a GIF.
+
+Rule of thumb: **mostly-static UI → GIF; full-screen photos/video → WebM.** MP4 isn't
+supported (the bundled encoder only does VP8/WebM).
