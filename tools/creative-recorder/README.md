@@ -56,6 +56,9 @@ node record.mjs ./creative.html \
 | `--loop`       | 0          | GIF loop count, 0 = infinite |
 | `--colors`     | 256        | Max palette colors per frame (2–256); lower shrinks the file (GIF only) |
 | `--vbitrate`   | 3M         | WebM target bitrate (only when `--out` ends in `.webm`) |
+| `--clean`      | on         | Auto-dismiss cookie/consent/subscribe/paywall overlays; `--clean off` to disable |
+| `--keep-snap`  | false      | Keep CSS scroll-snap (by default it's disabled for smooth scrolling) |
+| `--settle`     | 40         | ms waited per frame for paint / lazy-loaded content |
 | `--format`     | rgb565     | Palette precision: `rgb565` (best for photos), `rgb444`, `rgba4444` |
 | `--out-scale`  | 1          | Output pixel density vs CSS px; `>1` renders larger/crisper (pair with a higher `--ss`) |
 | `--dither`     | on         | Ordered dithering to reduce banding; pass `--dither off` for full-screen photo scrolls (avoids shimmer + smaller file) |
@@ -64,6 +67,14 @@ node record.mjs ./creative.html \
 ## What it handles automatically
 
 - **Plain pages / HTML files** — scrolls the window.
+- **Smooth scrolling by default** — disables CSS `scroll-snap` during capture so feeds
+  *glide* instead of jumping card-to-card, and captures one forward pass then mirrors the
+  frames for a perfectly seamless loop (never re-scrolls dynamic content).
+- **Virtualized / lazy-loaded "continuous" feeds** — verifies each scroll position actually
+  landed and waits for more content to render, so the scroll doesn't cap or snap.
+- **Live pages** — auto-dismisses common cookie/consent/subscribe/paywall overlays
+  (OneTrust, Osano, TrustArc, GDPR/consent banners, full-screen modals). Disable with
+  `--clean off`; keep snapping with `--keep-snap true`.
 - **Self-contained "bundled" creatives** (e.g. Taboola TrueNative standalone ad units that
   boot a React/JSX app and scroll inside a phone frame):
   - The file is served over a local HTTP server, because these creatives use a `fetch()`

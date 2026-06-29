@@ -68,6 +68,9 @@ const O = {
   ditherStrength: parseFloat(args['dither-strength'] || '16'),
   outScale: parseFloat(args['out-scale'] || '1'), // output pixel density vs CSS px (>1 = larger/crisper)
   vbitrate: args.vbitrate || null,           // WebM target bitrate (e.g. 3M); only for .webm output
+  clean: args.clean !== 'off',               // auto-dismiss cookie/consent/subscribe overlays (on by default)
+  keepSnap: args['keep-snap'] === 'true',     // keep CSS scroll-snap (off by default -> snap disabled for smooth scroll)
+  settle: parseInt(args.settle || '40', 10), // ms to wait per frame for paint/lazy-load
 };
 
 // Locate an ffmpeg binary: prefer Playwright's bundled build, fall back to PATH.
@@ -139,6 +142,7 @@ async function main() {
   const page = await ctx.newPage();
   await page.goto(navUrl, { waitUntil: 'load' }).catch(() => {});
   await page.waitForTimeout(O.wait);
+  await cleanPage(page, O);
 
   // Detect inner scroll container + device frame.
   const geo = await page.evaluate((PAD) => {
@@ -182,9 +186,6 @@ async function main() {
 
   const totalFrames = Math.max(4, Math.round(O.duration * O.fps));
   const frameDelayMs = Math.round(1000 / O.fps);
-  const holdFrac = Math.min(0.4, (O.hold * O.fps) / totalFrames);
-
-  console.log(`Scroll: ${usesInner ? 'inner' : 'window'} range ${maxScroll}px | clip ${clip ? clip.width + 'x' + clip.height : 'full ' + vp.width + 'x' + vp.height} @${O.ss}x | ${totalFrames} frames @${O.fps}fps ${O.scroll}`);
 
   // Scroll band: optionally scroll between two depths instead of from the very top.
   const absMax = usesInner ? geo.innerMax : geo.winMax;
@@ -193,33 +194,53 @@ async function main() {
   const span = end - start;
   if (start || O.scrollTo != null) console.log(`Scroll band: ${start} -> ${end}px`);
 
-  // Per-frame scroll positions.
+  // We capture ONE smooth forward pass, then mirror the frames for a seamless loop.
+  // Mirroring (forward + reversed) is always seamless and never re-scrolls dynamic /
+  // virtualized content, so lazy-loaded feeds don't snap or pop on the way back.
+  const loop = O.scroll === 'pingpong';
+  const capN = loop ? Math.max(2, Math.round(totalFrames / 2) + 1) : totalFrames;
   const positions = [];
-  for (let i = 0; i < totalFrames; i++) {
-    const p = i / (totalFrames - 1);
-    let v;
-    if (O.scroll === 'pingpong') {
-      const tri = p < 0.5 ? p * 2 : (1 - p) * 2;
-      const lo = holdFrac, hi = 1 - holdFrac;
-      const m = tri <= lo ? 0 : tri >= hi ? 1 : (tri - lo) / (hi - lo);
-      v = start + ease(m) * span;
-    } else if (O.scroll === 'down') {
-      v = start + ease(p) * span;
-    } else v = start;
-    positions.push(Math.round(v));
+  for (let i = 0; i < capN; i++) {
+    const p = capN === 1 ? 0 : i / (capN - 1);
+    positions.push(Math.round(start + (O.scroll === 'none' ? 0 : ease(p)) * span));
   }
 
-  const setScroll = usesInner
-    ? (y) => page.evaluate((yy) => { const el = document.querySelector('[data-rec-scroll]'); if (el) el.scrollTop = yy; }, y)
-    : (y) => page.evaluate((yy) => window.scrollTo(0, yy), y);
+  console.log(`Scroll: ${usesInner ? 'inner' : 'window'} ${start}->${end}px | clip ${clip ? clip.width + 'x' + clip.height : 'full ' + vp.width + 'x' + vp.height} @${O.ss}x | ${loop ? '2x' : ''}${capN} frames @${O.fps}fps ${O.scroll}`);
+
+  // Set scroll position and verify it actually reached the target — retrying gives
+  // virtualized/lazy-loaded feeds time to render more content (so positions don't cap).
+  const rawSet = usesInner
+    ? (y) => page.evaluate((yy) => { const el = document.querySelector('[data-rec-scroll]'); if (!el) return 0; el.scrollTop = yy; return Math.round(el.scrollTop); }, y)
+    : (y) => page.evaluate((yy) => { window.scrollTo(0, yy); return Math.round(window.scrollY); }, y);
+  async function gotoScroll(target) {
+    let got = await rawSet(target), tries = 0;
+    while (got < target - 2 && tries < 25) { await page.waitForTimeout(50); got = await rawSet(target); tries++; }
+    return got;
+  }
+
+  // Capture unique forward frames.
+  const isWebm = /\.webm$/i.test(O.out);
+  const shots = [];
+  let lastGot = -1, stuck = 0;
+  for (let i = 0; i < capN; i++) {
+    const got = await gotoScroll(positions[i]);
+    if (got <= lastGot && positions[i] > lastGot) stuck++;
+    lastGot = Math.max(lastGot, got);
+    await page.waitForTimeout(O.settle);
+    shots.push(await page.screenshot({ type: isWebm ? 'jpeg' : 'png', quality: 92, clip: clip || undefined }));
+    process.stdout.write(`\r  capture ${i + 1}/${capN} (y=${got})   `);
+  }
+  process.stdout.write('\n');
+  if (stuck > capN * 0.15) console.log(`  note: ${stuck}/${capN} frames could not advance (content end or load limit)`);
+
+  // Playback order: forward, then reversed without duplicating the endpoints.
+  const order = shots.map((_, i) => i);
+  if (loop) for (let i = shots.length - 2; i >= 1; i--) order.push(i);
 
   const outPath = isAbsolute(O.out) ? O.out : resolve(process.cwd(), O.out);
-  const isWebm = /\.webm$/i.test(O.out);
   let outW = 0, outH = 0;
 
   if (isWebm) {
-    // Smooth video path: pipe JPEG frames to the bundled ffmpeg -> VP8 WebM.
-    // Far smaller than GIF for full-screen photographic scrolls and supports high fps.
     const ffmpeg = findFfmpeg();
     if (!ffmpeg) { console.error('No ffmpeg found for WebM output.'); await browser.close(); process.exit(1); }
     const clipW = clip ? clip.width : vp.width;
@@ -232,40 +253,56 @@ async function main() {
       '-c:v', 'libvpx', '-b:v', (O.vbitrate || '3M'), '-pix_fmt', 'yuv420p',
       '-an', outPath,
     ], { stdio: ['pipe', 'ignore', 'ignore'] });
-    for (let i = 0; i < totalFrames; i++) {
-      await setScroll(positions[i]);
-      await page.waitForTimeout(10);
-      const buf = await page.screenshot({ type: 'jpeg', quality: 92, clip: clip || undefined });
-      await new Promise((res) => ff.stdin.write(buf) ? res() : ff.stdin.once('drain', res));
-      process.stdout.write(`\r  frame ${i + 1}/${totalFrames}`);
-    }
+    for (const idx of order) await new Promise((res) => ff.stdin.write(shots[idx]) ? res() : ff.stdin.once('drain', res));
     ff.stdin.end();
     await new Promise((res) => ff.on('close', res));
-    process.stdout.write('\n');
   } else {
-    const gif = GIFEncoder();
-    const dsFactor = Math.max(1, O.ss / O.outScale); // render at O.ss, output at O.outScale px density
-    for (let i = 0; i < totalFrames; i++) {
-      await setScroll(positions[i]);
-      await page.waitForTimeout(10);
-      const buf = await page.screenshot({ type: 'png', clip: clip || undefined });
+    // Encode each unique frame once, then write them in playback order.
+    const dsFactor = Math.max(1, O.ss / O.outScale);
+    const enc = shots.map((buf) => {
       const { data, width, height } = decodePNG(buf);
       const ds = downscale(data, width, height, dsFactor);
-      outW = ds.width; outH = ds.height;
       if (O.dither) orderedDither(ds.data, ds.width, ds.height, O.ditherStrength);
       const palette = quantize(ds.data, O.colors, { format: O.format });
       const index = applyPalette(ds.data, palette, O.format);
-      gif.writeFrame(index, ds.width, ds.height, { palette, delay: frameDelayMs, repeat: O.loop });
-      process.stdout.write(`\r  frame ${i + 1}/${totalFrames}`);
-    }
-    process.stdout.write('\n');
+      return { index, palette, w: ds.width, h: ds.height };
+    });
+    outW = enc[0].w; outH = enc[0].h;
+    const gif = GIFEncoder();
+    for (const idx of order) gif.writeFrame(enc[idx].index, enc[idx].w, enc[idx].h, { palette: enc[idx].palette, delay: frameDelayMs, repeat: O.loop });
     gif.finish();
     writeFileSync(outPath, gif.bytes());
   }
   await browser.close();
   if (server) await new Promise(r => server.close(r));
   const kb = (statSync(outPath).size / 1024).toFixed(0);
-  console.log(`Done: ${outPath} (${kb} KB, ${outW}x${outH})`);
+  console.log(`Done: ${outPath} (${kb} KB, ${outW}x${outH}, ${order.length} frames played)`);
+}
+
+// Disable scroll-snap (so scrolling glides instead of jumping card-to-card) and
+// auto-dismiss cookie/consent/subscribe/paywall overlays so live pages record clean.
+async function cleanPage(page, O) {
+  if (!O.keepSnap) {
+    await page.addStyleTag({ content: `*{scroll-snap-type:none !important;scroll-snap-align:none !important;scroll-behavior:auto !important;}` }).catch(() => {});
+  }
+  if (!O.clean) return;
+  const clickSel = ['#onetrust-accept-btn-handler', '#truste-consent-button', '.osano-cm-accept-all', '.osano-cm-accept',
+    'button[aria-label*="accept" i]', 'button[aria-label*="agree" i]', 'button[title*="accept" i]',
+    '[id*="accept-all" i]', '[class*="accept-all" i]', 'button[mode="primary"]'];
+  for (const s of clickSel) { try { const el = await page.$(s); if (el) await el.click({ timeout: 600 }).catch(() => {}); } catch { /* ignore */ } }
+  await page.addStyleTag({ content: `
+    #onetrust-consent-sdk,#onetrust-banner-sdk,.onetrust-pc-dark-filter,.osano-cm-window,#truste-consent-track,
+    [id*="gdpr" i],[class*="gdpr" i],[id*="cookie-banner" i],[class*="cookie-banner" i],[id*="consent" i],[class*="consent" i],
+    [id*="paywall" i],[class*="paywall" i],[class*="newsletter-signup" i],[class*="modal-overlay" i],[class*="interstitial" i],
+    .gnt_pr,.gnt_ss { display:none !important; visibility:hidden !important; }
+  ` }).catch(() => {});
+  // Heuristically drop any leftover full-screen fixed/sticky overlay (modals).
+  await page.evaluate(() => {
+    for (const el of document.querySelectorAll('body *')) {
+      const cs = getComputedStyle(el); const r = el.getBoundingClientRect();
+      if ((cs.position === 'fixed' || cs.position === 'sticky') && r.width >= innerWidth * 0.9 && r.height >= innerHeight * 0.8 && (parseInt(cs.zIndex) || 0) >= 1000) el.style.display = 'none';
+    }
+  }).catch(() => {});
 }
 
 // Ordered (Bayer 8x8) dithering: jitter each channel by a sub-step amount before
