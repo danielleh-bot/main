@@ -24,11 +24,19 @@
  *   --scroll <mode>     pingpong | down | none (default: pingpong — seamless loop)
  *   --hold <sec>        Pause at each end of a pingpong (default: 0.5)
  *   --scroll-px <px>    Override scroll distance (default: full content)
+ *   --scroll-from <px>  Start scrolling from this y-offset instead of the top (useful for
+ *                       content far down a long page, e.g. a feed below an article).
+ *   --focus <css>       Auto-scroll to this element and scroll through it (computes the
+ *                       start offset + distance from the element's position/height). Best
+ *                       way to capture a Taboola feed or widget low on a long page.
  *   --selector <css>    Clip to this element (overrides device auto-detect)
  *   --frame <mode>      device | viewport (default: device — auto-detect phone frame;
  *                       forced to viewport in --mobile mode)
  *   --pad <px>          Padding around the device frame clip (default: 18)
  *   --wait <ms>         Settle time after load before recording (default: 6000)
+ *   --no-warmup         Skip the pre-scroll that triggers lazy-loaded content (Taboola
+ *                       feeds, lazy images). Warm-up is on by default; disable for static
+ *                       pages where it just adds time.
  *   --loop <n>          GIF loop count, 0 = infinite (default: 0)
  *   --colors <n>        Max palette colors per frame, 2..256 (default: 256)
  *   --mobile            Emulate a mobile phone browser (mobile viewport, touch, mobile
@@ -52,7 +60,7 @@ import { fileURLToPath } from 'node:url';
 import http from 'node:http';
 
 // Value-less boolean flags: they never consume the following token.
-const BOOL_FLAGS = new Set(['mobile']);
+const BOOL_FLAGS = new Set(['mobile', 'no-warmup']);
 function parseArgs(argv) { const a = { _: [] }; for (let i = 0; i < argv.length; i++) { const t = argv[i]; if (t.startsWith('--')) { const k = t.slice(2); if (BOOL_FLAGS.has(k)) { a[k] = true; } else { a[k] = argv[i + 1]; i++; } } else a._.push(t); } return a; }
 const args = parseArgs(process.argv.slice(2));
 const target = args._[0];
@@ -72,6 +80,8 @@ const O = {
   scroll: args.scroll || 'pingpong',
   hold: parseFloat(args.hold || '0.5'),
   scrollPx: args['scroll-px'] != null ? parseInt(args['scroll-px'], 10) : null,
+  scrollFrom: args['scroll-from'] != null ? parseInt(args['scroll-from'], 10) : null,
+  focus: args.focus || null,
   selector: args.selector || null,
   frame: args.frame || (mobile ? 'viewport' : 'device'),
   pad: parseInt(args.pad || '18', 10),
@@ -80,6 +90,7 @@ const O = {
   colors: Math.max(2, Math.min(256, parseInt(args.colors || '256', 10))),
   mobile,
   dismiss,
+  warmup: !args['no-warmup'],
 };
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -137,22 +148,32 @@ async function main() {
   }
   const ctx = await browser.newContext(ctxOpts);
 
-  // Serve React/ReactDOM/Babel from local copies *only if present* (offline fallback);
-  // otherwise let the request hit the network normally.
-  await ctx.route('**/*', async (route) => {
-    const u = route.request().url(); const hdr = { 'access-control-allow-origin': '*' };
-    const js = (b) => route.fulfill({ status: 200, contentType: 'application/javascript', headers: hdr, body: b });
-    if (/(unpkg\.com|cdn\.jsdelivr\.net|esm\.sh).*@babel\/standalone/.test(u) && vendor.babel) return js(vendor.babel);
-    if (/(unpkg\.com|cdn\.jsdelivr\.net|esm\.sh).*react-dom.*\.js/.test(u) && vendor.reactDom) return js(vendor.reactDom);
-    if (/(unpkg\.com|cdn\.jsdelivr\.net|esm\.sh).*react.*\.js/.test(u) && vendor.react) return js(vendor.react);
-    return route.continue();
-  });
+  // Serve React/ReactDOM/Babel from local copies *only if present* (offline fallback for
+  // local bundled creatives). Scope this to LOCAL-file targets only: a catch-all route
+  // handler intercepts every request, and on heavy live sites (hundreds of third-party
+  // requests) that stalls/breaks the page load — remote URLs must load unintercepted.
+  if (!isRemote && (vendor.react || vendor.reactDom || vendor.babel)) {
+    await ctx.route(/(unpkg\.com|cdn\.jsdelivr\.net|esm\.sh)/, async (route) => {
+      const u = route.request().url(); const hdr = { 'access-control-allow-origin': '*' };
+      const js = (b) => route.fulfill({ status: 200, contentType: 'application/javascript', headers: hdr, body: b });
+      if (/@babel\/standalone/.test(u) && vendor.babel) return js(vendor.babel);
+      if (/react-dom.*\.js/.test(u) && vendor.reactDom) return js(vendor.reactDom);
+      if (/react.*\.js/.test(u) && vendor.react) return js(vendor.react);
+      return route.continue();
+    });
+  }
 
   const page = await ctx.newPage();
   await page.goto(navUrl, { waitUntil: 'load' }).catch(() => {});
   await page.waitForTimeout(O.wait);
 
   if (O.dismiss) await dismissOverlays(page, O.dismiss);
+
+  // Warm up lazy-loaded content (Taboola feeds, infinite-scroll widgets, lazy images) by
+  // scrolling the whole page through once before measuring — otherwise the scroll range is
+  // capped at the page's initial height and the feed (which only mounts on scroll) is never
+  // reached. Disable with --no-warmup.
+  if (O.warmup) await warmup(page);
 
   // Detect inner scroll container + device frame.
   const geo = await page.evaluate((PAD) => {
@@ -174,7 +195,10 @@ async function main() {
     return { innerScroll: !!sc, innerMax: scMax, winMax, frameBox };
   }, O.pad);
 
-  const usesInner = geo.innerScroll && geo.innerMax > 10;
+  // Prefer an inner scroll container only when it actually scrolls more than the window
+  // (true for bundled creatives whose window barely moves; false for normal pages where a
+  // small incidental overflow div would otherwise hijack the scroll from the real content).
+  const usesInner = geo.innerScroll && geo.innerMax > 10 && geo.innerMax > geo.winMax;
   let maxScroll = usesInner ? geo.innerMax : geo.winMax;
   if (O.scrollPx != null) maxScroll = Math.min(O.scrollPx, maxScroll);
   if (O.scroll === 'none') maxScroll = 0;
@@ -198,7 +222,30 @@ async function main() {
   const frameDelayMs = Math.round(1000 / O.fps);
   const holdFrac = Math.min(0.4, (O.hold * O.fps) / totalFrames);
 
-  console.log(`Scroll: ${usesInner ? 'inner' : 'window'} range ${maxScroll}px | clip ${clip ? clip.width + 'x' + clip.height : 'full ' + vp.width + 'x' + vp.height} @${O.ss}x | ${totalFrames} frames @${O.fps}fps ${O.scroll}`);
+  // Scroll window: base (start offset) + span (distance travelled). By default the whole
+  // page (0..maxScroll). --focus <selector> starts at an element and scrolls through it;
+  // --scroll-from <px> starts at a fixed offset. Both are handy for content that lives far
+  // down a long page (e.g. a Taboola feed below a long article) — otherwise the recording
+  // spends its whole duration on the article and never reaches it.
+  let base = 0, span = maxScroll;
+  if (O.focus && maxScroll > 0) {
+    const info = await page.evaluate(({ sel, inner }) => {
+      const e = document.querySelector(sel); if (!e) return null;
+      const r = e.getBoundingClientRect();
+      if (inner) { const sc = document.querySelector('[data-rec-scroll]'); const sr = sc.getBoundingClientRect(); return { top: (r.top - sr.top) + sc.scrollTop, height: e.offsetHeight, vp: sc.clientHeight }; }
+      return { top: r.top + window.scrollY, height: e.offsetHeight, vp: window.innerHeight };
+    }, { sel: O.focus, inner: usesInner });
+    if (!info) { console.error(`--focus selector not found: ${O.focus}`); await browser.close(); if (server) await new Promise(r => server.close(r)); process.exit(1); }
+    // Start just above the element and scroll to the end of the page — captures the element
+    // and everything after it (e.g. a whole Taboola feed that runs to the page bottom).
+    base = Math.max(0, Math.min(info.top - O.pad, maxScroll));
+    span = maxScroll - base;
+  } else if (O.scrollFrom != null && maxScroll > 0) {
+    base = Math.max(0, Math.min(O.scrollFrom, maxScroll));
+    span = maxScroll - base;
+  }
+
+  console.log(`Scroll: ${usesInner ? 'inner' : 'window'} base ${base}px + span ${span}px (max ${maxScroll}px) | clip ${clip ? clip.width + 'x' + clip.height : 'full ' + vp.width + 'x' + vp.height} @${O.ss}x | ${totalFrames} frames @${O.fps}fps ${O.scroll}`);
 
   // Per-frame scroll positions.
   const positions = [];
@@ -209,10 +256,10 @@ async function main() {
       const tri = p < 0.5 ? p * 2 : (1 - p) * 2;
       const lo = holdFrac, hi = 1 - holdFrac;
       const m = tri <= lo ? 0 : tri >= hi ? 1 : (tri - lo) / (hi - lo);
-      v = ease(m) * maxScroll;
+      v = base + ease(m) * span;
     } else if (O.scroll === 'down') {
-      v = ease(p) * maxScroll;
-    } else v = 0;
+      v = base + ease(p) * span;
+    } else v = base;
     positions.push(Math.round(v));
   }
 
@@ -241,6 +288,37 @@ async function main() {
   await browser.close();
   if (server) await new Promise(r => server.close(r));
   console.log(`Done: ${outPath} (${(gif.bytes().length / 1024).toFixed(0)} KB, ${outW}x${outH})`);
+}
+
+// Scroll the page (and the largest inner scroll container, if any) all the way through
+// once to trigger lazy-loaded content — Taboola feeds, infinite-scroll widgets, and
+// IntersectionObserver-driven images only mount/load when scrolled into view. Steps in
+// viewport-sized increments, re-reading the (growing) scroll height as content appears,
+// then returns to the top so recording starts from a fully-loaded page.
+async function warmup(page) {
+  await page.evaluate(async () => {
+    const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+    // Scroll the window in viewport-sized steps. Viewport scrolling is what drives the
+    // IntersectionObserver-based lazy loading that feeds/images/embeds use; also scroll any
+    // large inner overflow container at each step so bundled creatives warm up too.
+    const maxOf = () => document.documentElement.scrollHeight - innerHeight;
+    let y = 0;
+    for (let i = 0; i < 120; i++) {
+      const max = maxOf();
+      y = Math.min(y + innerHeight * 0.85, max);
+      window.scrollTo(0, y);
+      // nudge inner scrollers (e.g. a phone-frame feed) proportionally
+      for (const el of document.querySelectorAll('*')) {
+        const m = el.scrollHeight - el.clientHeight;
+        if (m > 200 && /(auto|scroll)/.test(getComputedStyle(el).overflowY) && el.clientHeight > 200) el.scrollTop = m * (max ? y / max : 0);
+      }
+      await sleep(200);
+      if (y >= max) { await sleep(400); if (y >= maxOf()) break; } // settle, confirm no further growth
+    }
+    window.scrollTo(0, 0);
+    document.querySelectorAll('*').forEach(el => { if (el.scrollHeight - el.clientHeight > 200) el.scrollTop = 0; });
+    await sleep(500);
+  }).catch(() => {});
 }
 
 // Dismiss cookie / subscribe / newsletter / paywall overlays before recording.

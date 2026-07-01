@@ -50,7 +50,7 @@ import { spawn } from 'node:child_process';
 import http from 'node:http';
 
 // Value-less boolean flags: they never consume the following token.
-const BOOL_FLAGS = new Set(['mobile']);
+const BOOL_FLAGS = new Set(['mobile', 'no-warmup']);
 function parseArgs(argv) { const a = { _: [] }; for (let i = 0; i < argv.length; i++) { const t = argv[i]; if (t.startsWith('--')) { const k = t.slice(2); if (BOOL_FLAGS.has(k)) { a[k] = true; } else { a[k] = argv[i + 1]; i++; } } else a._.push(t); } return a; }
 const args = parseArgs(process.argv.slice(2));
 const target = args._[0];
@@ -71,12 +71,15 @@ const O = {
   scroll: args.scroll || 'pingpong',
   hold: parseFloat(args.hold || '0.5'),
   scrollPx: args['scroll-px'] != null ? parseInt(args['scroll-px'], 10) : null,
+  scrollFrom: args['scroll-from'] != null ? parseInt(args['scroll-from'], 10) : null,
+  focus: args.focus || null,
   selector: args.selector || null,
   frame: args.frame || (mobile ? 'viewport' : 'device'),
   pad: parseInt(args.pad || '18', 10),
   wait: parseInt(args.wait || '6000', 10),
   mobile,
   dismiss,
+  warmup: !args['no-warmup'],
 };
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -130,21 +133,26 @@ async function main() {
   }
   const ctx = await browser.newContext(ctxOpts);
 
-  // Serve React/ReactDOM/Babel from local copies *only if present* (offline fallback).
-  await ctx.route('**/*', async (route) => {
-    const u = route.request().url(); const hdr = { 'access-control-allow-origin': '*' };
-    const js = (b) => route.fulfill({ status: 200, contentType: 'application/javascript', headers: hdr, body: b });
-    if (/(unpkg\.com|cdn\.jsdelivr\.net|esm\.sh).*@babel\/standalone/.test(u) && vendor.babel) return js(vendor.babel);
-    if (/(unpkg\.com|cdn\.jsdelivr\.net|esm\.sh).*react-dom.*\.js/.test(u) && vendor.reactDom) return js(vendor.reactDom);
-    if (/(unpkg\.com|cdn\.jsdelivr\.net|esm\.sh).*react.*\.js/.test(u) && vendor.react) return js(vendor.react);
-    return route.continue();
-  });
+  // Serve React/ReactDOM/Babel from local copies *only if present* (offline fallback for
+  // local bundled creatives). Scope to LOCAL-file targets only: a catch-all route handler
+  // intercepts every request, and on heavy live sites that stalls/breaks the page load.
+  if (!isRemote && (vendor.react || vendor.reactDom || vendor.babel)) {
+    await ctx.route(/(unpkg\.com|cdn\.jsdelivr\.net|esm\.sh)/, async (route) => {
+      const u = route.request().url(); const hdr = { 'access-control-allow-origin': '*' };
+      const js = (b) => route.fulfill({ status: 200, contentType: 'application/javascript', headers: hdr, body: b });
+      if (/@babel\/standalone/.test(u) && vendor.babel) return js(vendor.babel);
+      if (/react-dom.*\.js/.test(u) && vendor.reactDom) return js(vendor.reactDom);
+      if (/react.*\.js/.test(u) && vendor.react) return js(vendor.react);
+      return route.continue();
+    });
+  }
 
   const page = await ctx.newPage();
   await page.goto(navUrl, { waitUntil: 'load' }).catch(() => {});
   await page.waitForTimeout(O.wait);
 
   if (O.dismiss) await dismissOverlays(page, O.dismiss);
+  if (O.warmup) await warmup(page);
 
   // Detect inner scroll container + device frame.
   const geo = await page.evaluate((PAD) => {
@@ -166,7 +174,10 @@ async function main() {
     return { innerScroll: !!sc, innerMax: scMax, winMax, frameBox };
   }, O.pad);
 
-  const usesInner = geo.innerScroll && geo.innerMax > 10;
+  // Prefer an inner scroll container only when it actually scrolls more than the window
+  // (true for bundled creatives; false for normal pages where a small incidental overflow
+  // div would otherwise hijack the scroll from the real content).
+  const usesInner = geo.innerScroll && geo.innerMax > 10 && geo.innerMax > geo.winMax;
   let maxScroll = usesInner ? geo.innerMax : geo.winMax;
   if (O.scrollPx != null) maxScroll = Math.min(O.scrollPx, maxScroll);
   if (O.scroll === 'none') maxScroll = 0;
@@ -193,7 +204,26 @@ async function main() {
   const totalFrames = Math.max(4, Math.round(O.duration * O.fps));
   const holdFrac = Math.min(0.4, (O.hold * O.fps) / totalFrames);
 
-  console.log(`Scroll: ${usesInner ? 'inner' : 'window'} range ${maxScroll}px | out ${outW}x${outH} (captured @${O.ss}x) | ${totalFrames} frames @${O.fps}fps ${O.scroll} -> H.264 crf${O.crf}`);
+  // Scroll window: base (start offset) + span (distance). Default = whole page. --focus
+  // <selector> starts at an element and scrolls to the page end (great for a feed below a
+  // long article); --scroll-from <px> starts at a fixed offset.
+  let base = 0, span = maxScroll;
+  if (O.focus && maxScroll > 0) {
+    const info = await page.evaluate(({ sel, inner }) => {
+      const e = document.querySelector(sel); if (!e) return null;
+      const r = e.getBoundingClientRect();
+      if (inner) { const sc = document.querySelector('[data-rec-scroll]'); const sr = sc.getBoundingClientRect(); return { top: (r.top - sr.top) + sc.scrollTop }; }
+      return { top: r.top + window.scrollY };
+    }, { sel: O.focus, inner: usesInner });
+    if (!info) { console.error(`--focus selector not found: ${O.focus}`); await browser.close(); if (server) await new Promise(r => server.close(r)); process.exit(1); }
+    base = Math.max(0, Math.min(info.top - O.pad, maxScroll));
+    span = maxScroll - base;
+  } else if (O.scrollFrom != null && maxScroll > 0) {
+    base = Math.max(0, Math.min(O.scrollFrom, maxScroll));
+    span = maxScroll - base;
+  }
+
+  console.log(`Scroll: ${usesInner ? 'inner' : 'window'} base ${Math.round(base)}px + span ${Math.round(span)}px (max ${maxScroll}px) | out ${outW}x${outH} (captured @${O.ss}x) | ${totalFrames} frames @${O.fps}fps ${O.scroll} -> H.264 crf${O.crf}`);
 
   // Per-frame scroll positions.
   const positions = [];
@@ -204,10 +234,10 @@ async function main() {
       const tri = p < 0.5 ? p * 2 : (1 - p) * 2;
       const lo = holdFrac, hi = 1 - holdFrac;
       const m = tri <= lo ? 0 : tri >= hi ? 1 : (tri - lo) / (hi - lo);
-      v = ease(m) * maxScroll;
+      v = base + ease(m) * span;
     } else if (O.scroll === 'down') {
-      v = ease(p) * maxScroll;
-    } else v = 0;
+      v = base + ease(p) * span;
+    } else v = base;
     positions.push(Math.round(v));
   }
 
@@ -241,6 +271,31 @@ async function main() {
   if (server) await new Promise(r => server.close(r));
   const kb = existsSync(outPath) ? (readFileSync(outPath).length / 1024).toFixed(0) : '?';
   console.log(`Done: ${outPath} (${kb} KB, ${outW}x${outH}, ${O.fps}fps)`);
+}
+
+// Scroll the whole page through once to trigger lazy-loaded content (Taboola feeds, lazy
+// images, IntersectionObserver embeds) so the measured scroll range includes them. Steps
+// in viewport increments, re-reading the growing height, then returns to the top.
+async function warmup(page) {
+  await page.evaluate(async () => {
+    const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+    const maxOf = () => document.documentElement.scrollHeight - innerHeight;
+    let y = 0;
+    for (let i = 0; i < 120; i++) {
+      const max = maxOf();
+      y = Math.min(y + innerHeight * 0.85, max);
+      window.scrollTo(0, y);
+      for (const el of document.querySelectorAll('*')) {
+        const m = el.scrollHeight - el.clientHeight;
+        if (m > 200 && /(auto|scroll)/.test(getComputedStyle(el).overflowY) && el.clientHeight > 200) el.scrollTop = m * (max ? y / max : 0);
+      }
+      await sleep(200);
+      if (y >= max) { await sleep(400); if (y >= maxOf()) break; }
+    }
+    window.scrollTo(0, 0);
+    document.querySelectorAll('*').forEach(el => { if (el.scrollHeight - el.clientHeight > 200) el.scrollTop = 0; });
+    await sleep(500);
+  }).catch(() => {});
 }
 
 // Dismiss cookie / subscribe / newsletter / paywall overlays before recording.
