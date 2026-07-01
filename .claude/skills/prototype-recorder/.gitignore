@@ -1,0 +1,12 @@
+node_modules/
+.last-base-url
+.DS_Store
+*.log
+
+# Local-only: storage state for Figma auth (when we add that helper)
+storageState*.json
+
+# Per-user recipes — each person's working recipes stay local. Generic /
+# teaching-quality recipes get promoted into recipes/_examples/ instead.
+recipes/*.mjs
+!recipes/_examples/
