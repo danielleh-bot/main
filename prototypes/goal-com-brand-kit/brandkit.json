@@ -1,0 +1,91 @@
+{
+  "brand": {
+    "name": "Goal.com",
+    "tagline": "",
+    "website": "https://www.goal.com",
+    "description": "Lionel Messi didn't always have a great relationship with the Argentina national team, but the tears that followed Sunday's defeat in the World Cup final highlighted the beautiful bond he has found wi",
+    "language": "en-GB",
+    "direction": "ltr"
+  },
+  "logos": {
+    "primary": { "type": "text", "text": "Goal.com" },
+    "favicon_url": "https://www.goal.com/favicon.ico?v=1.1477.1"
+  },
+  "colors": {
+    "primary": { "name": "Primary Accent", "hex": "#FF6347", "source": "extracted" },
+    "text": {
+      "primary": { "hex": "#FFFFFF", "count": 360, "source": "extracted" },
+      "secondary": { "hex": "#FF6347", "count": 8, "source": "extracted" },
+      "tertiary": { "hex": "#DFDFDF", "count": 6, "source": "extracted" }
+    },
+    "backgrounds": {
+      "base": { "hex": "#1A1A1A", "source": "extracted" },
+      "section": null,
+      "dark": { "hex": "#252525", "source": "extracted" }
+    },
+    "top_text_colors": [
+      { "hex": "#FFFFFF", "count": 360 },
+      { "hex": "#FF6347", "count": 8 },
+      { "hex": "#DFDFDF", "count": 6 },
+      { "hex": "#EEEEEE", "count": 4 },
+      { "hex": "#F9F5FF", "count": 2 },
+      { "hex": "#000000", "count": 1 }
+    ],
+    "top_bg_colors": [
+      { "hex": "#252525", "count": 17 },
+      { "hex": "#333333", "count": 11 },
+      { "hex": "#161617", "count": 5 },
+      { "hex": "#5C3AAC", "count": 1 },
+      { "hex": "#FF6347", "count": 1 }
+    ],
+    "top_link_colors": [
+      { "hex": "#FFFFFF", "count": 50 },
+      { "hex": "#DFDFDF", "count": 1 },
+      { "hex": "#EEEEEE", "count": 1 }
+    ]
+  },
+  "fonts": {
+    "primary": {
+      "family": "Satoshi",
+      "fallbacks": ["sans-serif"],
+      "weights": { "regular": 400, "bold": 600 },
+      "usage_count": 358,
+      "source": "extracted",
+      "is_generic": false
+    },
+    "secondary": { "family": "Clash Grotesk", "usage_count": 30, "source": "extracted" },
+    "tertiary": null,
+    "type_scale": {
+      "section_headings": { "size": "36px", "weight": 700, "family": "Clash Grotesk", "line_height": "36px", "color": "#FFFFFF", "source": "extracted" },
+      "article_title_hero": { "size": "16px", "weight": 400, "family": "Satoshi", "line_height": "19.2px", "color": "#FFFFFF", "source": "extracted" },
+      "article_title_card": { "size": "16px", "weight": 700, "family": "Satoshi", "line_height": "22.4px", "color": "#FFFFFF", "source": "extracted" },
+      "article_lead": { "source": "fallback" },
+      "article_body": { "size": "20px", "weight": 600, "family": "Satoshi", "line_height": "32px", "color": "#FFFFFF", "source": "extracted" },
+      "navigation": { "size": "16px", "weight": 600, "family": "Clash Grotesk", "line_height": "19.2px", "color": "#FFFFFF", "text_transform": "uppercase", "source": "extracted" },
+      "utility_bar": { "size": "16px", "weight": 400, "family": "Satoshi", "line_height": "19.2px", "color": "#FFFFFF", "source": "extracted" },
+      "category_pills": { "size": "16px", "weight": 700, "family": "Satoshi", "line_height": "22.4px", "color": "#FFFFFF", "source": "extracted" },
+      "buttons": { "size": "10px", "weight": 700, "family": "Satoshi", "line_height": "14px", "color": "#DFDFDF", "source": "extracted" },
+      "meta_text": { "size": "14px", "weight": 400, "family": "Satoshi", "line_height": "16.8px", "color": "#FFFFFF", "source": "extracted" }
+    },
+    "all_fonts": [
+      { "family": "Satoshi", "count": 358, "weights": [400, 500, 600, 700] },
+      { "family": "Clash Grotesk", "count": 30, "weights": [600, 700] }
+    ]
+  },
+  "photo_style": { "thumbnail_format": { "aspect_ratio": "16:9", "border_radius": "0px" } },
+  "spacing": { "grid_gap": "normal" },
+  "buttons": {
+    "primary": {
+      "background_color": "#FF6347",
+      "text_color": "#FFFFFF",
+      "border_radius": "22px",
+      "padding": "0px 36px",
+      "font_size": "16px",
+      "font_weight": 700,
+      "source": "extracted"
+    }
+  },
+  "header": { "background_color": null, "is_dark": false },
+  "extraction_quality": { "extracted_token_count": 17, "fallback_token_count": 1, "total_tokens": 18, "extraction_ratio": 0.94, "fallback_tokens": ["fonts.type_scale.article_lead"] },
+  "metadata": { "analysis_date": "2026-07-30", "source_url": "https://www.goal.com/en-gb/lists/lionel-messi-world-cup-final-tears-belated-beautiful-bond-argentina-icon/blt34c70d4d893d1687", "analysis_method": "Playwright computed style extraction with ad/social exclusion" }
+}

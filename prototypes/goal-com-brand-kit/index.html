@@ -1,0 +1,1106 @@
+<title>Goal.com Brand Kit — Widget Prototype</title>
+
+<style>
+  /* ============================================================
+     OUTER CHROME — the instrument.
+     Cool slate neutrals, desaturated teal probe accent.
+     Deliberately contains NO #FF6347, so every tomato pixel on
+     this page is brand-kit-derived.
+     ============================================================ */
+  :root {
+    --paper:        #F4F6F8;
+    --paper-raised: #FFFFFF;
+    --ink:          #16191D;
+    --ink-soft:     #46505A;
+    --muted:        #6B757F;
+    --rule:         #D3D9DF;
+    --rule-soft:    #E4E9ED;
+    --probe:        #1F6F7A;
+    --probe-wash:   #E4F0F1;
+    --flag:         #8A5E13;
+    --flag-wash:    #F6EEDC;
+
+    --mono: ui-monospace, "SF Mono", SFMono-Regular, "Cascadia Mono", Menlo, Consolas, "Liberation Mono", monospace;
+    --prose: "Helvetica Neue", system-ui, -apple-system, "Segoe UI", Arial, sans-serif;
+
+    --measure: 1140px;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --paper:        #101317;
+      --paper-raised: #171B20;
+      --ink:          #E6EAEE;
+      --ink-soft:     #A7B1BA;
+      --muted:        #7E8992;
+      --rule:         #2A3138;
+      --rule-soft:    #21272D;
+      --probe:        #59B3BF;
+      --probe-wash:   #16282B;
+      --flag:         #D6A954;
+      --flag-wash:    #2A2415;
+    }
+  }
+  :root[data-theme="dark"] {
+    --paper:        #101317;
+    --paper-raised: #171B20;
+    --ink:          #E6EAEE;
+    --ink-soft:     #A7B1BA;
+    --muted:        #7E8992;
+    --rule:         #2A3138;
+    --rule-soft:    #21272D;
+    --probe:        #59B3BF;
+    --probe-wash:   #16282B;
+    --flag:         #D6A954;
+    --flag-wash:    #2A2415;
+  }
+  :root[data-theme="light"] {
+    --paper:        #F4F6F8;
+    --paper-raised: #FFFFFF;
+    --ink:          #16191D;
+    --ink-soft:     #46505A;
+    --muted:        #6B757F;
+    --rule:         #D3D9DF;
+    --rule-soft:    #E4E9ED;
+    --probe:        #1F6F7A;
+    --probe-wash:   #E4F0F1;
+    --flag:         #8A5E13;
+    --flag-wash:    #F6EEDC;
+  }
+
+  * { box-sizing: border-box; }
+
+  .lab {
+    background: var(--paper);
+    color: var(--ink);
+    font-family: var(--prose);
+    font-size: 16px;
+    line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+    padding: 0 24px 88px;
+    min-height: 100vh;
+  }
+
+  .wrap {
+    max-width: var(--measure);
+    margin: 0 auto;
+  }
+
+  /* ---- status bar ---------------------------------------- */
+  .statusbar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 8px 20px;
+    padding: 14px 0 13px;
+    border-bottom: 1px solid var(--rule);
+    font-family: var(--mono);
+    font-size: 11.5px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+  .statusbar b {
+    color: var(--ink);
+    font-weight: 600;
+    letter-spacing: 0.04em;
+  }
+  .statusbar .sep { color: var(--rule); }
+
+  /* ---- masthead ------------------------------------------ */
+  .masthead {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 340px);
+    gap: 24px 56px;
+    align-items: end;
+    padding: 52px 0 30px;
+    border-bottom: 1px solid var(--rule);
+  }
+  @media (max-width: 820px) {
+    .masthead { grid-template-columns: minmax(0, 1fr); align-items: start; }
+  }
+  .eyebrow {
+    font-family: var(--mono);
+    font-size: 11.5px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--probe);
+    margin: 0 0 16px;
+  }
+  h1.title {
+    font-family: var(--prose);
+    font-size: clamp(30px, 4.4vw, 46px);
+    line-height: 1.08;
+    letter-spacing: -0.022em;
+    font-weight: 600;
+    margin: 0;
+    text-wrap: balance;
+  }
+  .standfirst {
+    margin: 18px 0 0;
+    font-size: 17px;
+    line-height: 1.6;
+    color: var(--ink-soft);
+    max-width: 62ch;
+  }
+
+  /* ---- extraction score readout -------------------------- */
+  .score {
+    border: 1px solid var(--rule);
+    background: var(--paper-raised);
+    padding: 16px 18px 17px;
+  }
+  .score-top {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 12px;
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+  .score-val {
+    font-family: var(--mono);
+    font-size: 30px;
+    font-weight: 600;
+    letter-spacing: -0.02em;
+    color: var(--ink);
+    font-variant-numeric: tabular-nums;
+    margin: 8px 0 12px;
+  }
+  .score-val small {
+    font-size: 13px;
+    font-weight: 400;
+    color: var(--muted);
+    letter-spacing: 0;
+  }
+  .meter {
+    height: 5px;
+    background: var(--rule-soft);
+    display: flex;
+    overflow: hidden;
+  }
+  .meter i { display: block; height: 100%; }
+  .meter .got  { width: 94.4%; background: var(--probe); }
+  .meter .miss { width: 5.6%;  background: var(--flag); }
+  .score-legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px 16px;
+    margin: 10px 0 0;
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--muted);
+  }
+  .score-legend span { display: inline-flex; align-items: center; gap: 6px; }
+  .score-legend span::before {
+    content: "";
+    width: 8px; height: 8px;
+    background: var(--probe);
+    flex: 0 0 auto;
+  }
+  .score-legend span.is-flag::before { background: var(--flag); }
+
+  /* ---- section scaffolding ------------------------------- */
+  .section { padding: 58px 0 0; }
+  .section-head {
+    display: flex;
+    align-items: baseline;
+    gap: 14px;
+    margin: 0 0 22px;
+  }
+  .section-head h2 {
+    font-family: var(--mono);
+    font-size: 12px;
+    letter-spacing: 0.13em;
+    text-transform: uppercase;
+    font-weight: 600;
+    color: var(--ink);
+    margin: 0;
+    flex: 0 0 auto;
+  }
+  .section-head .rule {
+    flex: 1 1 auto;
+    height: 1px;
+    background: var(--rule);
+  }
+  .note {
+    font-size: 14.5px;
+    line-height: 1.6;
+    color: var(--ink-soft);
+    max-width: 74ch;
+    margin: 0 0 26px;
+  }
+  .note code {
+    font-family: var(--mono);
+    font-size: 0.88em;
+    background: var(--rule-soft);
+    padding: 1.5px 5px;
+    color: var(--ink);
+  }
+
+  /* ---- viewport frame holding the specimen --------------- */
+  .viewport {
+    border: 1px solid var(--rule);
+    background: var(--paper-raised);
+    padding: 10px;
+  }
+  .viewport .gc {
+    /* keeps the specimen legible as a separate object when the chrome is
+       also dark — the kit's own ground has no border of its own */
+    outline: 1px solid var(--rule);
+    outline-offset: 0;
+  }
+  .viewport-bar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px 14px;
+    padding: 0 4px 10px;
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: 0.05em;
+    color: var(--muted);
+  }
+  .viewport-bar .dot {
+    width: 7px; height: 7px;
+    border-radius: 50%;
+    background: var(--probe);
+    flex: 0 0 auto;
+  }
+  .viewport-bar .url {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    min-width: 0;
+  }
+  .viewport-bar .tag {
+    margin-left: auto;
+    border: 1px solid var(--rule);
+    padding: 2px 8px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    flex: 0 0 auto;
+  }
+
+  /* ============================================================
+     SPECIMEN — Goal.com, rendered from brandkit.json.
+     Every value below is traceable to a token in the kit; the
+     token path is in the comment. Committed dark (kit ground is
+     #1A1A1A), so this block does not respond to viewer theme.
+     ============================================================ */
+  .gc {
+    /* colors.* */
+    --gc-bg:        #1A1A1A;  /* colors.backgrounds.base */
+    --gc-surface:   #252525;  /* colors.backgrounds.dark / top_bg_colors[0] */
+    --gc-raised:    #333333;  /* colors.top_bg_colors[1] */
+    --gc-deep:      #161617;  /* colors.top_bg_colors[2] */
+    --gc-promo:     #5C3AAC;  /* colors.top_bg_colors[3] */
+    --gc-accent:    #FF6347;  /* colors.primary */
+    --gc-text:      #FFFFFF;  /* colors.text.primary */
+    --gc-text-2:    #FF6347;  /* colors.text.secondary */
+    --gc-text-3:    #DFDFDF;  /* colors.text.tertiary */
+
+    /* fonts.primary / fonts.secondary — see the substitution note */
+    --gc-sans:    "Satoshi", "Helvetica Neue", "Segoe UI Variable Text", system-ui, -apple-system, Arial, sans-serif;
+    --gc-display: "Clash Grotesk", "Archivo", "Helvetica Neue", "Segoe UI Variable Display", system-ui, Arial, sans-serif;
+
+    /* buttons.primary */
+    --gc-btn-radius: 22px;
+    --gc-btn-pad:    0px 36px;
+
+    /* photo_style.thumbnail_format */
+    --gc-thumb-radius: 0px;
+
+    background: var(--gc-bg);
+    color: var(--gc-text);
+    font-family: var(--gc-sans);
+    direction: ltr;           /* brand.direction */
+    overflow: hidden;
+  }
+  .gc *, .gc *::before, .gc *::after { box-sizing: border-box; }
+  .gc p { margin: 0; }
+
+  /* -- utility bar : fonts.type_scale.utility_bar ---------- */
+  .gc-utility {
+    background: var(--gc-deep);
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px 22px;
+    padding: 9px 24px;
+    font-size: 16px;
+    font-weight: 400;
+    line-height: 19.2px;
+    color: var(--gc-text);
+  }
+  .gc-utility .gc-u-right { margin-left: auto; display: flex; gap: 18px; align-items: center; }
+  .gc-utility .gc-live {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    color: var(--gc-text-2);   /* colors.text.secondary */
+    font-weight: 700;
+  }
+  .gc-utility .gc-live::before {
+    content: "";
+    width: 7px; height: 7px;
+    border-radius: 50%;
+    background: var(--gc-accent);
+  }
+
+  /* -- masthead + nav : fonts.type_scale.navigation -------- */
+  .gc-top {
+    background: var(--gc-surface);
+    padding: 16px 24px;
+    display: flex;
+    align-items: center;
+    gap: 26px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  }
+  .gc-logo {
+    /* logos.primary — type: "text", text: "Goal.com" */
+    font-family: var(--gc-display);
+    font-size: 28px;
+    font-weight: 700;
+    line-height: 1;
+    letter-spacing: -0.02em;
+    color: var(--gc-text);
+    flex: 0 0 auto;
+  }
+  .gc-logo em {
+    font-style: normal;
+    color: var(--gc-accent);
+  }
+  .gc-nav {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px 24px;
+    align-items: center;
+    min-width: 0;
+  }
+  .gc-nav a {
+    font-family: var(--gc-display);
+    font-size: 16px;
+    font-weight: 600;
+    line-height: 19.2px;
+    text-transform: uppercase;
+    color: var(--gc-text);
+    text-decoration: none;
+    padding-bottom: 3px;
+    border-bottom: 2px solid transparent;
+  }
+  .gc-nav a[aria-current="page"] { border-bottom-color: var(--gc-accent); }
+  .gc-nav a:hover { color: var(--gc-text-3); }
+  .gc-nav a:focus-visible { outline: 2px solid var(--gc-accent); outline-offset: 3px; }
+
+  .gc-top-cta { margin-left: auto; flex: 0 0 auto; }
+
+  /* -- buttons.primary ------------------------------------- */
+  .gc-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--gc-accent);          /* buttons.primary.background_color */
+    color: #FFFFFF;                        /* buttons.primary.text_color */
+    border: 0;
+    border-radius: var(--gc-btn-radius);   /* 22px */
+    padding: var(--gc-btn-pad);            /* 0px 36px — no vertical padding in kit */
+    min-height: 44px;                      /* added: kit gives no height, 0 vertical padding */
+    font-family: var(--gc-sans);
+    font-size: 16px;                       /* buttons.primary.font_size */
+    font-weight: 700;                      /* buttons.primary.font_weight */
+    line-height: 1;
+    text-decoration: none;
+    cursor: pointer;
+  }
+  .gc-btn:hover { filter: brightness(1.08); }
+  .gc-btn:focus-visible { outline: 2px solid #FFFFFF; outline-offset: 2px; }
+  .gc-btn.is-small { min-height: 34px; font-size: 14px; padding: 0 22px; }
+
+  /* -- article ------------------------------------------- */
+  .gc-article { padding: 34px 24px 8px; max-width: 780px; }
+
+  /* category_pills : 16 / 700 / 22.4 */
+  .gc-pill {
+    display: inline-block;
+    background: var(--gc-accent);
+    color: var(--gc-text);
+    font-size: 16px;
+    font-weight: 700;
+    line-height: 22.4px;
+    padding: 2px 14px;
+    border-radius: 2px;
+  }
+  .gc-pill.is-promo { background: var(--gc-promo); }
+
+  /* headline uses section_headings (36 / 700 / 36 / Clash Grotesk) —
+     see caveat: article_title_hero extracted as 16px/400, which is a
+     card-title measurement, not a hero. */
+  .gc-h1 {
+    font-family: var(--gc-display);
+    font-size: 36px;
+    font-weight: 700;
+    line-height: 36px;
+    color: var(--gc-text);
+    margin: 18px 0 0;
+    text-wrap: balance;
+    letter-spacing: -0.015em;
+  }
+
+  /* meta_text : 14 / 400 / 16.8 */
+  .gc-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px 10px;
+    align-items: center;
+    font-size: 14px;
+    font-weight: 400;
+    line-height: 16.8px;
+    color: var(--gc-text);
+    margin: 20px 0 0;
+  }
+  .gc-meta .gc-dot { color: var(--gc-text-3); }
+  .gc-meta .gc-author { font-weight: 700; }
+
+  /* article_body : 20 / 600 / 32 */
+  .gc-body {
+    font-size: 20px;
+    font-weight: 600;
+    line-height: 32px;
+    color: var(--gc-text);
+    display: flex;
+    flex-direction: column;
+    gap: 22px;
+    margin: 26px 0 0;
+  }
+  .gc-body a { color: var(--gc-text-2); text-decoration: underline; text-underline-offset: 3px; }
+
+  /* -- placeholder imagery --------------------------------
+     No remote images (CSP) and no live art retrieved, so these are
+     CSS stand-ins. The hatch marks them as placeholders rather than
+     passing them off as the publisher's photography. */
+  .gc-figure { margin: 24px 0 0; }
+  .gc-ph {
+    display: block;                           /* required: aspect-ratio is ignored on inline boxes */
+    position: relative;
+    aspect-ratio: 16 / 9;                     /* photo_style.thumbnail_format */
+    border-radius: var(--gc-thumb-radius);    /* 0px */
+    overflow: hidden;
+    background: linear-gradient(148deg, #2E3A34 0%, #1F2A26 46%, #3A2A24 100%);
+  }
+  .gc-ph::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: repeating-linear-gradient(
+      45deg,
+      rgba(255, 255, 255, 0.045) 0 2px,
+      transparent 2px 9px
+    );
+  }
+  .gc-ph.v2 { background: linear-gradient(160deg, #24303B 0%, #1B2430 52%, #35251F 100%); }
+  .gc-ph.v3 { background: linear-gradient(122deg, #3A2B22 0%, #241D1B 55%, #1E2A2A 100%); }
+  .gc-ph.v4 { background: linear-gradient(200deg, #2A2438 0%, #1D1A26 50%, #33261F 100%); }
+  .gc-ph.v5 { background: linear-gradient(135deg, #23342C 0%, #1A231F 58%, #2E2119 100%); }
+  .gc-cap {
+    font-size: 14px;
+    font-weight: 400;
+    line-height: 16.8px;
+    color: var(--gc-text-3);
+    margin: 9px 0 0;
+  }
+
+  /* ============================================================
+     THE AD UNIT — Taboola-style feed, styled from the same kit.
+     ============================================================ */
+  .gc-widget {
+    background: var(--gc-surface);   /* colors.backgrounds.dark */
+    margin: 40px 0 0;
+    padding: 30px 24px 34px;
+    border-top: 3px solid var(--gc-accent);
+  }
+  .gc-widget-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 8px 16px;
+    margin: 0 0 22px;
+  }
+  /* section_headings : 36 / 700 / 36 / Clash Grotesk */
+  .gc-widget-head h3 {
+    font-family: var(--gc-display);
+    font-size: 36px;
+    font-weight: 700;
+    line-height: 36px;
+    color: var(--gc-text);
+    margin: 0;
+    letter-spacing: -0.015em;
+  }
+  /* buttons token : 10 / 700 / 14 / #DFDFDF — the small utility label */
+  .gc-sponsored-label {
+    font-size: 10px;
+    font-weight: 700;
+    line-height: 14px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--gc-text-3);
+    margin-left: auto;
+  }
+
+  .gc-feed {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 20px;                        /* spacing.grid_gap: "normal" */
+  }
+  @media (max-width: 900px) { .gc-feed { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+  @media (max-width: 520px) { .gc-feed { grid-template-columns: minmax(0, 1fr); } }
+
+  .gc-card {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    background: transparent;
+    text-decoration: none;
+    color: inherit;
+    min-width: 0;
+  }
+  .gc-card:focus-visible { outline: 2px solid var(--gc-accent); outline-offset: 4px; }
+  .gc-card-thumb { display: block; position: relative; }
+  .gc-card:hover .gc-card-title { color: var(--gc-text-3); }
+
+  /* article_title_card : 16 / 700 / 22.4 */
+  .gc-card-title {
+    font-size: 16px;
+    font-weight: 700;
+    line-height: 22.4px;
+    color: var(--gc-text);
+    margin: 0;
+    text-wrap: pretty;
+    flex: 1 1 auto;          /* pins attribution to the card foot so rows align across the feed */
+  }
+  /* meta_text : 14 / 400 / 16.8 */
+  .gc-card-meta {
+    font-size: 14px;
+    font-weight: 400;
+    line-height: 16.8px;
+    color: var(--gc-text-3);
+    margin: 0;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 3px 8px;
+    align-items: baseline;
+  }
+  .gc-card-meta .gc-brand { color: var(--gc-text-2); font-weight: 700; }
+  .gc-flag {
+    position: absolute;
+    top: 0;
+    left: 0;
+    background: var(--gc-accent);
+    color: #FFFFFF;
+    font-size: 10px;
+    font-weight: 700;
+    line-height: 14px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    padding: 4px 9px;
+  }
+  .gc-flag.is-organic { background: var(--gc-raised); color: var(--gc-text-3); }
+
+  .gc-widget-foot {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 14px 20px;
+    margin: 26px 0 0;
+    padding: 18px 0 0;
+    border-top: 1px solid rgba(255, 255, 255, 0.09);
+  }
+  .gc-credit {
+    font-size: 10px;
+    font-weight: 700;
+    line-height: 14px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--gc-text-3);
+  }
+  .gc-widget-foot .gc-btn { margin-left: auto; }
+
+  /* -- footer -------------------------------------------- */
+  .gc-foot {
+    background: var(--gc-deep);
+    padding: 22px 24px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px 24px;
+    align-items: center;
+    font-size: 14px;
+    font-weight: 400;
+    line-height: 16.8px;
+    color: var(--gc-text-3);
+  }
+  .gc-foot .gc-foot-logo {
+    font-family: var(--gc-display);
+    font-size: 16px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.02em;
+    color: var(--gc-text);
+  }
+
+  /* ---- probe callout attached to the widget -------------- */
+  .probe {
+    display: flex;
+    gap: 12px;
+    align-items: flex-start;
+    margin: 10px 4px 0;
+    padding: 11px 13px;
+    background: var(--probe-wash);
+    border-left: 3px solid var(--probe);
+    font-family: var(--mono);
+    font-size: 11.5px;
+    line-height: 1.6;
+    color: var(--ink);
+  }
+  .probe b {
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--probe);
+    font-weight: 600;
+    flex: 0 0 auto;
+  }
+
+  /* ---- token trace table --------------------------------- */
+  .table-scroll { overflow-x: auto; border: 1px solid var(--rule); background: var(--paper-raised); }
+  table.trace {
+    width: 100%;
+    min-width: 720px;
+    border-collapse: collapse;
+    font-size: 13.5px;
+  }
+  table.trace th, table.trace td {
+    text-align: left;
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--rule-soft);
+    vertical-align: top;
+  }
+  table.trace thead th {
+    font-family: var(--mono);
+    font-size: 10.5px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--muted);
+    font-weight: 600;
+    border-bottom: 1px solid var(--rule);
+    white-space: nowrap;
+  }
+  table.trace tbody tr:last-child td { border-bottom: 0; }
+  table.trace td.tok, table.trace td.val {
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--ink-soft);
+    white-space: nowrap;
+  }
+  table.trace td.tok { color: var(--ink); }
+  .swatch {
+    display: inline-block;
+    width: 11px; height: 11px;
+    margin-right: 7px;
+    vertical-align: -1px;
+    border: 1px solid rgba(128, 128, 128, 0.4);
+  }
+
+  /* ---- caveat list --------------------------------------- */
+  .caveats {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+  .caveats li {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    gap: 14px;
+    padding: 14px 16px;
+    background: var(--paper-raised);
+    border: 1px solid var(--rule);
+    border-left: 3px solid var(--flag);
+    font-size: 14.5px;
+    line-height: 1.6;
+    color: var(--ink-soft);
+  }
+  .caveats .kind {
+    font-family: var(--mono);
+    font-size: 10.5px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--flag);
+    font-weight: 600;
+    padding-top: 3px;
+    white-space: nowrap;
+  }
+  .caveats strong { color: var(--ink); font-weight: 600; }
+  .caveats code {
+    font-family: var(--mono);
+    font-size: 0.87em;
+    background: var(--flag-wash);
+    padding: 1.5px 5px;
+    color: var(--ink);
+  }
+
+  .colophon {
+    margin: 58px 0 0;
+    padding: 20px 0 0;
+    border-top: 1px solid var(--rule);
+    font-family: var(--mono);
+    font-size: 11.5px;
+    line-height: 1.75;
+    color: var(--muted);
+    max-width: 84ch;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    * { transition: none !important; animation: none !important; }
+  }
+</style>
+
+<div class="lab">
+  <div class="wrap">
+
+    <div class="statusbar">
+      <span><b>Brand kit prototype</b></span>
+      <span class="sep">/</span>
+      <span>source &nbsp;goal.com &nbsp;en-GB</span>
+      <span class="sep">/</span>
+      <span>extracted &nbsp;2026-07-30</span>
+      <span class="sep">/</span>
+      <span>playwright computed-style</span>
+      <span class="sep">/</span>
+      <span><b>not affiliated with Goal.com</b></span>
+    </div>
+
+    <header class="masthead">
+      <div>
+        <p class="eyebrow">Recommendation unit · brand-matched</p>
+        <h1 class="title">One kit, 18 tokens, and a widget that stops looking like an ad</h1>
+        <p class="standfirst">
+          Goal.com's article template rebuilt from <code style="font-family:var(--mono);font-size:0.86em">brandkit.json</code> alone,
+          with a Taboola-style recommendation feed underneath it drawing on the same tokens. Nothing here is hand-picked to
+          match — every colour, size, weight and radius below traces to a field in the kit.
+        </p>
+      </div>
+
+      <div class="score">
+        <div class="score-top">
+          <span>Extraction quality</span>
+          <span>18 tokens</span>
+        </div>
+        <p class="score-val">94.4%<small> &nbsp;coverage</small></p>
+        <div class="meter">
+          <i class="got"></i><i class="miss"></i>
+        </div>
+        <p class="score-legend">
+          <span>17 extracted</span>
+          <span class="is-flag">1 fallback</span>
+        </p>
+      </div>
+    </header>
+
+    <!-- ===================== THE SPECIMEN ===================== -->
+    <section class="section">
+      <div class="section-head">
+        <h2>Rendered from the kit</h2>
+        <span class="rule"></span>
+      </div>
+      <p class="note">
+        The page chrome, article and ad unit below share one token source. Scroll to the feed — it inherits the
+        publisher's ground (<code>#252525</code>), display face, 16:9 square-cornered thumbnails and 22px pill button
+        without any per-placement design work.
+      </p>
+
+      <div class="viewport">
+        <div class="viewport-bar">
+          <span class="dot"></span>
+          <span class="url">www.goal.com/en-gb/lists/lionel-messi-world-cup-final-tears-belated-beautiful-bond-argentina-icon</span>
+          <span class="tag">Prototype render</span>
+        </div>
+
+        <div class="gc">
+          <div class="gc-utility">
+            <span>Sunday, 30 July</span>
+            <span class="gc-live">Live scores</span>
+            <span class="gc-u-right">
+              <span>Edition: UK</span>
+              <span>Sign in</span>
+            </span>
+          </div>
+
+          <div class="gc-top">
+            <span class="gc-logo">Goal<em>.com</em></span>
+            <nav class="gc-nav" aria-label="Sections">
+              <a href="#" aria-current="page">News</a>
+              <a href="#">Transfers</a>
+              <a href="#">Lists</a>
+              <a href="#">Fixtures</a>
+              <a href="#">Tables</a>
+            </nav>
+            <span class="gc-top-cta">
+              <a class="gc-btn is-small" href="#">Follow</a>
+            </span>
+          </div>
+
+          <article class="gc-article">
+            <span class="gc-pill">Lists</span>
+            <h2 class="gc-h1">Lionel Messi, the World Cup final tears, and a belated but beautiful bond with Argentina</h2>
+            <p class="gc-meta">
+              <span class="gc-author">Staff Writer</span>
+              <span class="gc-dot">·</span>
+              <span>30 July 2026</span>
+              <span class="gc-dot">·</span>
+              <span>6 min read</span>
+            </p>
+
+            <figure class="gc-figure">
+              <div class="gc-ph" role="img" aria-label="Placeholder image standing in for the article's lead photograph"></div>
+              <figcaption class="gc-cap">Placeholder artwork — the live image was not retrieved.</figcaption>
+            </figure>
+
+            <div class="gc-body">
+              <p>
+                Placeholder body copy. This block exists to carry the extracted
+                <a href="#">article_body</a> measurement — 20px, weight 600, 32px leading — at a realistic column width so
+                the ad unit below inherits a believable reading rhythm. The live article text was not fetched.
+              </p>
+              <p>
+                Two further placeholder paragraphs follow at the same setting, enough to establish where the recommendation
+                feed lands relative to the fold and how the publisher's ground colour behaves across a long scroll.
+              </p>
+            </div>
+          </article>
+
+          <!-- ---------------- the ad unit ---------------- -->
+          <section class="gc-widget" aria-label="Recommended content">
+            <div class="gc-widget-head">
+              <h3>You May Also Like</h3>
+              <span class="gc-sponsored-label">Sponsored links</span>
+            </div>
+
+            <div class="gc-feed">
+              <a class="gc-card" href="#">
+                <span class="gc-card-thumb">
+                  <span class="gc-ph v2" role="img" aria-label="Placeholder thumbnail"></span>
+                  <span class="gc-flag">Ad</span>
+                </span>
+                <p class="gc-card-title">Placeholder sponsored headline sized to the publisher's card token</p>
+                <p class="gc-card-meta"><span class="gc-brand">Advertiser</span><span>Sponsored</span></p>
+              </a>
+
+              <a class="gc-card" href="#">
+                <span class="gc-card-thumb">
+                  <span class="gc-ph v3" role="img" aria-label="Placeholder thumbnail"></span>
+                  <span class="gc-flag">Ad</span>
+                </span>
+                <p class="gc-card-title">A second placeholder title, deliberately longer, to show two-line wrap at 22.4px leading</p>
+                <p class="gc-card-meta"><span class="gc-brand">Advertiser</span><span>Sponsored</span></p>
+              </a>
+
+              <a class="gc-card" href="#">
+                <span class="gc-card-thumb">
+                  <span class="gc-ph v4" role="img" aria-label="Placeholder thumbnail"></span>
+                  <span class="gc-flag is-organic">Goal</span>
+                </span>
+                <p class="gc-card-title">Organic recommendation slot, same card token, publisher-owned</p>
+                <p class="gc-card-meta"><span class="gc-brand">Goal.com</span><span>Lists</span></p>
+              </a>
+
+              <a class="gc-card" href="#">
+                <span class="gc-card-thumb">
+                  <span class="gc-ph v5" role="img" aria-label="Placeholder thumbnail"></span>
+                  <span class="gc-flag is-organic">Goal</span>
+                </span>
+                <p class="gc-card-title">Fourth slot completing the four-up grid at normal gutter</p>
+                <p class="gc-card-meta"><span class="gc-brand">Goal.com</span><span>Transfers</span></p>
+              </a>
+            </div>
+
+            <div class="gc-widget-foot">
+              <span class="gc-credit">by Taboola</span>
+              <a class="gc-btn" href="#">See more</a>
+            </div>
+          </section>
+
+          <div class="gc-foot">
+            <span class="gc-foot-logo">Goal.com</span>
+            <span>Prototype footer — not a live page</span>
+          </div>
+        </div>
+
+        <p class="probe">
+          <b>Probe</b>
+          <span>The bordered block above the footer is the ad unit. Its ground, display face, 0px thumbnail radius,
+          10px/700 sponsorship labels and 22px pill CTA are all read from the kit — no bespoke styling.</span>
+        </p>
+      </div>
+    </section>
+
+    <!-- ===================== TOKEN TRACE ===================== -->
+    <section class="section">
+      <div class="section-head">
+        <h2>Token trace</h2>
+        <span class="rule"></span>
+      </div>
+      <p class="note">
+        Which field in the kit drove which decision in the ad unit. Everything in this column is a direct read; nothing
+        was tuned by eye.
+      </p>
+
+      <div class="table-scroll">
+        <table class="trace">
+          <thead>
+            <tr>
+              <th scope="col">Kit field</th>
+              <th scope="col">Value</th>
+              <th scope="col">Applied to</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td class="tok">colors.backgrounds.dark</td>
+              <td class="val"><span class="swatch" style="background:#252525"></span>#252525</td>
+              <td>Widget ground, separating the unit from the <code>#1A1A1A</code> article ground</td>
+            </tr>
+            <tr>
+              <td class="tok">colors.primary</td>
+              <td class="val"><span class="swatch" style="background:#FF6347"></span>#FF6347</td>
+              <td>Widget top rule, sponsorship flags, CTA fill, active nav underline</td>
+            </tr>
+            <tr>
+              <td class="tok">colors.text.primary</td>
+              <td class="val"><span class="swatch" style="background:#FFFFFF"></span>#FFFFFF</td>
+              <td>Card titles, widget heading, nav</td>
+            </tr>
+            <tr>
+              <td class="tok">colors.text.tertiary</td>
+              <td class="val"><span class="swatch" style="background:#DFDFDF"></span>#DFDFDF</td>
+              <td>Card attribution, sponsorship label, image caption</td>
+            </tr>
+            <tr>
+              <td class="tok">fonts.type_scale.section_headings</td>
+              <td class="val">36 / 700 / 36 · Clash&nbsp;Grotesk</td>
+              <td>"You May Also Like" — matched to the publisher's own section headings</td>
+            </tr>
+            <tr>
+              <td class="tok">fonts.type_scale.article_title_card</td>
+              <td class="val">16 / 700 / 22.4 · Satoshi</td>
+              <td>Every recommendation card title</td>
+            </tr>
+            <tr>
+              <td class="tok">fonts.type_scale.meta_text</td>
+              <td class="val">14 / 400 / 16.8 · Satoshi</td>
+              <td>Card attribution and byline rows</td>
+            </tr>
+            <tr>
+              <td class="tok">fonts.type_scale.buttons</td>
+              <td class="val">10 / 700 / 14 · #DFDFDF</td>
+              <td>"Sponsored links" and "by Taboola" micro-labels</td>
+            </tr>
+            <tr>
+              <td class="tok">fonts.type_scale.navigation</td>
+              <td class="val">16 / 600 / 19.2 · uppercase</td>
+              <td>Section nav in the mock header</td>
+            </tr>
+            <tr>
+              <td class="tok">buttons.primary</td>
+              <td class="val">radius 22px · 16 / 700</td>
+              <td>"See more" pill and header "Follow"</td>
+            </tr>
+            <tr>
+              <td class="tok">photo_style.thumbnail_format</td>
+              <td class="val">16:9 · radius 0px</td>
+              <td>All five image wells — square corners, not the rounded default</td>
+            </tr>
+            <tr>
+              <td class="tok">colors.top_bg_colors[3]</td>
+              <td class="val"><span class="swatch" style="background:#5C3AAC"></span>#5C3AAC</td>
+              <td>Held in reserve as a promo-pill variant; single occurrence in the source, so not used in the feed</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- ===================== CAVEATS ===================== -->
+    <section class="section">
+      <div class="section-head">
+        <h2>What the kit got wrong</h2>
+        <span class="rule"></span>
+      </div>
+      <p class="note">
+        Building against the kit surfaced five problems worth fixing upstream. Four are extraction bugs, one is an
+        environment limit on my side.
+      </p>
+
+      <ul class="caveats">
+        <li>
+          <span class="kind">Mis-read</span>
+          <span>
+            <strong><code>header.is_dark: false</code> contradicts the rest of the kit.</strong>
+            The base ground is <code>#1A1A1A</code> and primary text is <code>#FFFFFF</code> — this is unambiguously a dark
+            site. Any downstream logic branching on <code>is_dark</code> would pick light-mode styling and produce white-on-white.
+            <code>header.background_color</code> is also <code>null</code>. Highest-severity issue in the kit.
+          </span>
+        </li>
+        <li>
+          <span class="kind">Mis-read</span>
+          <span>
+            <strong><code>article_title_hero</code> came back as 16px / weight 400.</strong>
+            That is a thumbnail measurement, not a hero — it is identical to <code>article_title_card</code> but lighter.
+            The extractor most likely sampled a related-articles rail instead of the headline. I rendered the mock's headline
+            from <code>section_headings</code> (36 / 700) instead, which is the only credible display treatment in the kit.
+          </span>
+        </li>
+        <li>
+          <span class="kind">Suspect</span>
+          <span>
+            <strong><code>article_body</code> at weight 600 is implausible for running text.</strong>
+            20px / 32px leading is reasonable; semibold body copy is not. I rendered it verbatim so the demo shows what the
+            kit actually claims — that is why the article paragraphs look heavy. Probably a sampled pull-quote or standfirst.
+          </span>
+        </li>
+        <li>
+          <span class="kind">Incomplete</span>
+          <span>
+            <strong><code>buttons.primary.padding</code> is <code>0px 36px</code> — no vertical padding.</strong>
+            Rendered literally the CTA collapses to zero height. I added <code>min-height: 44px</code> to make it tappable.
+            The kit needs either a height or a real vertical padding value. Related: <code>backgrounds.section</code> is
+            <code>null</code> and <code>article_lead</code> is the one acknowledged fallback token.
+          </span>
+        </li>
+        <li>
+          <span class="kind">My limit</span>
+          <span>
+            <strong>Neither typeface is actually rendering.</strong>
+            Satoshi and Clash Grotesk are commercial Fontshare faces; the artifact CSP blocks font CDNs and neither is
+            installed here, so the stacks name them first and then fall back to system grotesques. Sizes, weights, leading
+            and letter-spacing are the extracted values, but <em>letterforms are approximate</em>. Judge the proportions,
+            not the type. Likewise, <code>www.goal.com</code> is blocked by this environment's network policy, so all copy
+            and imagery is placeholder — only the headline and URL come from the kit's own metadata.
+          </span>
+        </li>
+      </ul>
+    </section>
+
+    <p class="colophon">
+      Prototype built from ded79f2e-brandkit.json · analysis date 2026-07-30 · extraction via Playwright computed-style
+      with ad/social exclusion.<br />
+      Independent design mock for internal evaluation of brand-kit extraction. Not affiliated with, endorsed by, or
+      produced for Goal.com; not a reproduction of any live Goal.com page. Article body copy, thumbnails, advertiser
+      names and byline are placeholders.
+    </p>
+
+  </div>
+</div>
