@@ -19,6 +19,16 @@
         "--transport",
         "http-only"
       ]
+    },
+    "everygen": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "mcp-remote",
+        "https://everygen-ai.com/mcp",
+        "--transport",
+        "http-only"
+      ]
     }
   }
 }
